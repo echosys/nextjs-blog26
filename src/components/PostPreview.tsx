@@ -62,7 +62,7 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
       
       <div className="relative w-full max-w-4xl max-h-full flex flex-col bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-800 shrink-0">
+        <div className="flex items-center justify-between p-4 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-4">
             <button 
               onClick={onClose}
@@ -88,10 +88,10 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 md:p-12">
-          <div className="max-w-3xl mx-auto space-y-8">
-            <div className="space-y-4">
-              <h2 className="text-4xl font-bold text-white tracking-tight leading-tight">
+        <div className="flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="max-w-3xl mx-auto space-y-5">
+            <div className="space-y-3">
+              <h2 className="text-3xl font-bold text-white tracking-tight leading-tight">
                 {post.title}
               </h2>
               <div className="flex flex-wrap items-center gap-4 text-sm text-slate-400">
@@ -119,13 +119,13 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
             </div>
 
             <div className="prose prose-invert max-w-none">
-              <p className="text-slate-300 text-lg leading-relaxed whitespace-pre-wrap">
+              <p className="text-slate-300 text-base leading-relaxed whitespace-pre-wrap">
                 {post.content}
               </p>
             </div>
 
             {post.attachment && (
-              <div className="pt-8 border-t border-slate-800">
+              <div className="pt-5 border-t border-slate-800">
                 <a 
                   href={post.attachment} 
                   download={post.attachmentName || 'attachment'}

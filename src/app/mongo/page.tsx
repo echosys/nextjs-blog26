@@ -29,7 +29,7 @@ export default async function MongoBlogPage({
     const { blogs, allTags } = await getBlogs(selectedTag);
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-4">
             {success === 'true' && (
                 <div className="bg-teal-500/10 border border-teal-500/20 p-4 rounded-xl flex items-center justify-between">
                     <div className="flex items-center gap-3 text-teal-400">
@@ -41,8 +41,8 @@ export default async function MongoBlogPage({
             )}
 
             <div className="flex flex-col md:flex-row gap-8">
-                <aside className="w-full md:w-64 space-y-6">
-                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <aside className="w-full md:w-64 space-y-3">
+                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
                         <Tag size={14} /> Filter by Tags
                     </h3>
                     <div className="flex flex-wrap md:flex-col gap-2">

@@ -21,8 +21,8 @@ export default async function RootLayout({
     return (
         <html lang="en">
             <body className="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
-                <div className="max-w-6xl mx-auto w-full px-6 py-12 flex-1">
-                    <header className="mb-12 border-b border-slate-800 pb-8 flex justify-between items-center flex-wrap gap-4">
+                <div className="max-w-6xl mx-auto w-full px-6 py-6 flex-1">
+                    <header className="mb-6 border-b border-slate-800 pb-4 flex justify-between items-center flex-wrap gap-4">
                         <div>
                             <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-blue-400 bg-clip-text text-transparent">
                                 Blog Manager

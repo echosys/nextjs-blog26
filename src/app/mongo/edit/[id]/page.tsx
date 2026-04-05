@@ -144,13 +144,13 @@ export default function MongoEditPost() {
                 </>
             )}
 
-            <div className="mb-8">
+            <div className="mb-3">
                 <Link href="/mongo" className="text-slate-500 hover:text-slate-300 flex items-center gap-2 transition-colors">
                     <ArrowLeft size={18} /> Back to Blog
                 </Link>
             </div>
 
-            <h2 className="text-3xl font-bold mb-8">Edit Post</h2>
+            <h2 className="text-3xl font-bold mb-4">Edit Post</h2>
 
             <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
                 <aside className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 space-y-6 lg:sticky lg:top-6 lg:self-start">

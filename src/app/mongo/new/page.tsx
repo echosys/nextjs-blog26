@@ -95,15 +95,15 @@ export default function MongoNewPost() {
                 </>
             )}
 
-            <div className="mb-8">
+            <div className="mb-3">
                 <Link href="/mongo" className="text-slate-500 hover:text-slate-300 flex items-center gap-2 transition-colors">
                     <ArrowLeft size={18} /> Back to Blog
                 </Link>
             </div>
 
-            <h2 className="text-3xl font-bold mb-8">Create New Post</h2>
+            <h2 className="text-3xl font-bold mb-4">Create New Post</h2>
 
-            <form onSubmit={handleSubmit} className="space-y-6 bg-slate-900/50 p-8 rounded-2xl border border-slate-800">
+            <form onSubmit={handleSubmit} className="space-y-6 bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
                 <div className="space-y-2">
                     <label htmlFor="title" className="text-sm font-medium text-slate-400">Title</label>
                     <input
