@@ -1,19 +1,18 @@
 import Link from "next/link";
-import { Plus, Tag, Edit2, Download, CheckCircle2, X, Paperclip } from "lucide-react";
+import { Plus, Tag, CheckCircle2, X } from "lucide-react";
+import { headers } from "next/headers";
 import MongoPostList from "./MongoPostList";
-import clientPromise from "../../lib/mongodb";
+import { getMongoTags, listMongoBlogs } from "../../lib/storage";
 
 export const dynamic = 'force-dynamic';
 
-async function getBlogs(tag?: string) {
+async function getBlogs(tag?: string, host?: string | null) {
     try {
-        const client = await clientPromise;
-        const db = client.db('blog_2026');
-        const blogs = await db.collection('blog_entry')
-            .find((tag && tag !== 'all') ? { tags: tag } : {})
-            .sort({ createdAt: -1 }).limit(50).toArray();
-        const tagsDoc = await db.collection('blog_login').findOne({}, { projection: { tags: 1 } });
-        return { blogs: JSON.parse(JSON.stringify(blogs)), allTags: (tagsDoc?.tags || []) as string[] };
+        const [{ blogs }, allTags] = await Promise.all([
+            listMongoBlogs({ page: 1, limit: 50, tag, host }),
+            getMongoTags(host),
+        ]);
+        return { blogs: JSON.parse(JSON.stringify(blogs)), allTags };
     } catch {
         return { blogs: [], allTags: [] };
     }
@@ -26,7 +25,8 @@ export default async function MongoBlogPage({
 }) {
     const { tag, success } = await searchParams;
     const selectedTag = tag || 'all';
-    const { blogs, allTags } = await getBlogs(selectedTag);
+    const headerStore = await headers();
+    const { blogs, allTags } = await getBlogs(selectedTag, headerStore.get('host'));
 
     return (
         <div className="space-y-4">

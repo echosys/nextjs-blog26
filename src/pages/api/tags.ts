@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import clientPromise from '../../lib/mongodb';
+import { getMongoTags } from '../../lib/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'GET') {
@@ -8,12 +8,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        const client = await clientPromise;
-        const db = client.db('blog_2026');
-        const collection = db.collection('blog_login');
-
-        const result = await collection.findOne({}, { projection: { tags: 1, _id: 0 } });
-        const tags = result?.tags || [];
+        const tags = await getMongoTags(req.headers.host);
 
         res.status(200).json(tags);
     } catch (error) {

@@ -1,0 +1,15 @@
+{
+  "posts": [
+    {
+      "id": "1",
+      "title": "tetest",
+      "content": "testettetst",
+      "tags": [
+        "test"
+      ],
+      "attachment": "",
+      "attachmentName": "",
+      "createdAt": "2026-04-06T20:56:41.895Z"
+    }
+  ]
+}

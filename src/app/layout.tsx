@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import LogoutButton from "./components/LogoutButton";
 import ActiveNavLink from "./components/ActiveNavLink";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { getRuntimeStorageConfig } from "../lib/runtimeConfig";
 
 
 export const metadata: Metadata = {
@@ -16,7 +17,29 @@ export default async function RootLayout({
     children: React.ReactNode;
 }>) {
     const cookieStore = await cookies();
+    const headerStore = await headers();
+    const runtime = getRuntimeStorageConfig(headerStore.get("host"));
     const isLoggedIn = cookieStore.has("auth");
+
+    function parseHostFromUrl(url?: string): string {
+        if (!url) {
+            return "not configured";
+        }
+
+        try {
+            return new URL(url).host;
+        } catch {
+            return "configured";
+        }
+    }
+
+    const mongoFooter = runtime.mongoBlogMode === "json"
+        ? { title: "Mongo Blog", value: "JSON", detail: runtime.json.mongoBlogFile }
+        : { title: "Mongo Blog", value: "MongoDB", detail: parseHostFromUrl(process.env.MONGODB_URI) };
+
+    const pgFooter = runtime.postgresBlogMode === "json"
+        ? { title: "PG Blog", value: "JSON", detail: runtime.json.postgresBlogFile }
+        : { title: "PG Blog", value: "Postgres", detail: parseHostFromUrl(process.env.POSTGRES_URL) };
 
     return (
         <html lang="en">
@@ -45,21 +68,15 @@ export default async function RootLayout({
                     <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
                         <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
-                            <span className="text-slate-400 font-medium">MongoDB:</span>
-                            <span className="font-mono text-slate-500">
-                                {process.env.MONGODB_URI?.includes('mongodb.net') 
-                                    ? process.env.MONGODB_URI.split('@')[1]?.split('.')[0] || 'Atlas'
-                                    : 'Connected'}
-                            </span>
+                            <span className="text-slate-400 font-medium">{mongoFooter.title}:</span>
+                            <span className="font-mono text-slate-500">{mongoFooter.value}</span>
+                            <span className="font-mono text-slate-600 hidden sm:inline">{mongoFooter.detail}</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            <span className="text-slate-400 font-medium">PostgreSQL:</span>
-                            <span className="font-mono text-slate-500">
-                                {process.env.POSTGRES_URL?.includes('neon.tech') 
-                                    ? 'Neon' 
-                                    : process.env.POSTGRES_URL?.split('@')[1]?.split('.')[0] || 'Connected'}
-                            </span>
+                            <span className="text-slate-400 font-medium">{pgFooter.title}:</span>
+                            <span className="font-mono text-slate-500">{pgFooter.value}</span>
+                            <span className="font-mono text-slate-600 hidden sm:inline">{pgFooter.detail}</span>
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-6 opacity-60">

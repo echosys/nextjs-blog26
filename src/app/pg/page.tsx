@@ -1,22 +1,14 @@
 import Link from "next/link";
-import { Plus, Tag, Edit2, Download, CheckCircle2, X } from "lucide-react";
+import { Plus, Tag, CheckCircle2, X } from "lucide-react";
+import { headers } from "next/headers";
 import PgPostList from "./PgPostList";
-import { pgDb } from "../../lib/pg";
+import { listPgBlogs } from "../../lib/storage";
 
 export const dynamic = 'force-dynamic';
 
-async function getPgPosts(tag?: string) {
+async function getPgPosts(tag?: string, host?: string | null) {
     try {
-        let query = 'SELECT id, title, content, attachment_name, tags, created_at FROM posts';
-        const params: any[] = [];
-        if (tag && tag !== 'all') {
-            query += ' WHERE $1 = ANY(tags)';
-            params.push(tag);
-        }
-        query += ' ORDER BY created_at DESC';
-        const result = await pgDb.query(query, params);
-        const tagsResult = await pgDb.query('SELECT DISTINCT unnest(tags) as tag FROM posts ORDER BY tag ASC');
-        return { posts: result.rows, tags: tagsResult.rows.map((r: any) => r.tag) };
+        return await listPgBlogs({ tag, host });
     } catch {
         return { posts: [], tags: [] };
     }
@@ -29,7 +21,8 @@ export default async function PgBlogPage({
 }) {
     const { tag, success } = await searchParams;
     const selectedTag = tag || 'all';
-    const { posts, tags } = await getPgPosts(selectedTag);
+    const headerStore = await headers();
+    const { posts, tags } = await getPgPosts(selectedTag, headerStore.get('host'));
     const showSuccess = success === 'true';
 
     return (

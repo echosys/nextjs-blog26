@@ -1,0 +1,17 @@
+{
+  "posts": [
+    {
+      "id": "1",
+      "title": "Postgres Test Post",
+      "content": "This is a test post for Postgres",
+      "tags": [
+        "postgres",
+        "test"
+      ],
+      "attachment": "",
+      "attachmentName": "",
+      "attachmentChunks": [],
+      "createdAt": "2026-04-06T21:20:26.428Z"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { pgDb } from '../../../lib/pg';
+import { uploadPgChunk } from '../../../lib/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -15,10 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        await pgDb.query(
-            'INSERT INTO post_chunks (post_id, chunk_index, data) VALUES ($1, $2, $3)',
-            [parseInt(id as string), parseInt(index as string), data]
-        );
+        await uploadPgChunk(parseInt(id as string), parseInt(index as string), data, req.headers.host);
         return res.status(200).json({ success: true });
     } catch (error: any) {
         return res.status(500).json({ error: error.message });

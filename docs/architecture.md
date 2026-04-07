@@ -1,63 +1,74 @@
-# Next.js MongoDB Blog Template
+# Runtime Storage Architecture
 
-This project is a modern blog application built with Next.js, Netlify, and MongoDB. It features a simple interface for creating and managing blog posts with file attachments stored directly in the database.
+This project now uses a config-driven storage layer so the same application code can run against local JSON files during localhost development and real databases in deployment.
 
-## Design and Architecture
+## Core Flow
 
-- **New Tab**: Located at `/`, this page allows users to create new blog entries. It includes fields for a title, content, and a file upload button for attachments.
-- **Blog Tab**: Located at `/posts`, this page lists all blog entries retrieved from MongoDB. Posts with attachments show a preview (if it's an image) and a download link.
-- **Storage**: Attachments (zips, images, or single files) are converted to base64 strings and stored in the `attachment` field of the MongoDB documents.
+1. Runtime profile is resolved in `src/lib/runtimeConfig.ts`.
+2. `local` is selected for localhost or non-production development flows.
+3. `deploy` is selected for hosted environments.
+4. The active profile reads storage modes from `config/config.json`.
+5. `src/lib/storage.ts` dispatches each request to the correct adapter.
 
-## Framework & Tools
+## Active Components
 
-1. **Framework**: [Next.js](https://nextjs.org/) (using API routes for backend logic).
-2. **Hosting**: Optimized for [Netlify](https://www.netlify.com/) or [Vercel](https://vercel.com/).
-3. **Database**: [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) (Cloud).
+- `config/config.json`: single source of truth for local and deploy storage modes, collection names, table names, and JSON seed file paths.
+- `config/user.json`: local JSON auth source when `local.loginMode = json`.
+- `config/localBlogData_mongo.json`: local JSON blog source for the Mongo route when `local.mongoBlogMode = json`.
+- `config/localBlogData_postgres.json`: local JSON blog source for the PG route when `local.postgresBlogMode = json`.
+- `src/lib/storage.ts`: shared adapter entrypoint for auth, Mongo-style blog CRUD, Postgres-style blog CRUD, tag lookup, status checks, attachment download, and chunk uploads.
+- `src/lib/logger.ts`: appends runtime events to `logs/runtime.log`.
+- `src/pages/api/*`: thin API routes that delegate to the storage layer.
+- `src/app/mongo/page.tsx` and `src/app/pg/page.tsx`: server components that read through the same adapter layer as the APIs.
+- `src/app/layout.tsx`: footer badges are driven by runtime config mode instead of hardcoded environment assumptions.
 
-- **Blog Post Preview**: A dedicated client-side modal (`PostPreview.tsx`) allows users to read the full content of any post without leaving the main page. It supports keyboard navigation (Left/Right, Esc) and provides quick access to the edit view.
-- **Client Listing Control**: The blog lists are now managed by `MongoPostList.tsx` and `PgPostList.tsx` to handle the interactive preview and delete functionality seamlessly.
+## Storage Modes
 
-### User Authentication
-The application includes a premium login system:
-- **API**: `/api/login` verifies credentials against the `blog_login` collection.
-- **Login Page**: Accessible via `/login`.
-- **Protection**: Creating, editing, and deleting blogs are restricted to authenticated users.
+### Login
 
-### Tag Management & Filtering
-An optimized tag system is implemented for high-performance filtering:
-- **Global Tag List**: Unique tags are cached in the `blog_login` collection whenever a blog is created or updated. This avoids expensive scans of the entire blog collection.
-- **Sidebar Filtering**: The blog listing page (`/posts`) features a sidebar with a tag dropdown and quick-filter buttons.
-- **API Support**: The `/api/blogs` endpoint supports a `tag` query parameter for filtered, paginated results (15 per page).
+- `json`: validate against `config/user.json`.
+- `mongo`: validate against the configured Mongo login collection.
 
-## MongoDB Schema
+### Mongo Blog Route
 
-### Blog Entry (`blog_entry`)
-```json
-{
-  "_id": "ObjectId",
-  "title": "String",
-  "content": "String",
-  "tags": ["String"],
-  "attachment": "Base64 String (Data URL)",
-  "attachmentName": "String (Original Filename)",
-  "createdAt": "Date",
-  "updatedAt": "Date (Optional)"
-}
-```
+- `json`: read and write blog posts from `config/localBlogData_mongo.json`.
+- `mongo`: read and write blog posts from the configured Mongo blog collection.
 
-### Login & Global Tags (`blog_login`)
-```json
-{
-  "_id": "ObjectId",
-  "login": "String",
-  "pw": "String",
-  "tags": ["String"] (Used to cache unique tags across all posts)
-}
-```
+### Postgres Blog Route
 
-### Environment Variables
-Create a `.env.local` file in the root directory:
-```
-MONGODB_URI=your_mongodb_connection_string
-```
-For production, set this variable in your hosting provider's dashboard (Netlify/Vercel).
+- `json`: read and write blog posts from `config/localBlogData_postgres.json` using Postgres-shaped responses.
+- `postgres`: read and write blog posts from the configured Postgres tables.
+
+## Cross-Backend Consistency Rules
+
+- The adapter treats `tag=all` as no-filter for both Mongo and PG route listing functions.
+- Backend selection changes only storage target, not filtering semantics.
+- Local JSON behavior mirrors deploy behavior: Mongo and PG routes are isolated from each other.
+
+## Bootstrap Behavior
+
+The adapter layer performs storage bootstrap before use.
+
+- MongoDB: creates the configured login and blog collections if they do not exist.
+- MongoDB: upserts a dedicated `tag-cache` metadata document in the login collection.
+- Postgres: creates the configured blog and attachment tables if they do not exist.
+- Postgres: creates the required indexes for created date, tags, and chunk lookup.
+
+## Logging
+
+Key runtime actions are written to `logs/runtime.log`.
+
+- auth adapter selection
+- JSON file loads and writes
+- Mongo bootstrap and CRUD actions
+- Postgres bootstrap and CRUD actions
+- chunk uploads and storage failures
+
+## Request Path Summary
+
+1. UI calls `/api/login`, `/api/blogs`, `/api/pg_blogs`, `/api/status`, or `/api/pg_status`.
+2. The route forwards the request host to `src/lib/storage.ts`.
+3. The storage layer resolves `local` or `deploy`.
+4. The storage layer picks the configured backend.
+5. The backend is bootstrapped if needed.
+6. The route returns the same response shape expected by the existing UI.

@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { pgDb } from '../../lib/pg';
+import { getPostgresStatus } from '../../lib/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'GET') {
@@ -7,21 +7,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 
-    if (!process.env.POSTGRES_URL) {
-        return res.status(503).json({ status: 'error', message: 'POSTGRES_URL is not configured', host: 'not set' });
-    }
-
-    let host = 'unknown';
     try {
-        const url = new URL(process.env.POSTGRES_URL);
-        host = url.hostname;
-    } catch {}
+        const status = await getPostgresStatus(req.headers.host);
+        if (status.status === 'ok') {
+            return res.status(200).json(status);
+        }
 
-    try {
-        await pgDb.query('SELECT 1');
-        return res.status(200).json({ status: 'ok', host });
+        return res.status(503).json(status);
     } catch (error: any) {
-        return res.status(503).json({ status: 'error', message: error.message, host });
+        return res.status(503).json({ status: 'error', message: error.message, host: 'unknown' });
     }
 }
 

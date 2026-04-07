@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import clientPromise from '../../lib/mongodb';
+import { authenticateUser } from '../../lib/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -13,13 +13,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Login and Password required' });
     }
 
-    const client = await clientPromise;
-    const db = client.db('blog_2026');
-    const collection = db.collection('blog_login');
+    const isAuthenticated = await authenticateUser(login, pw, req.headers.host);
 
-    const user = await collection.findOne({ login, pw });
-
-    if (user) {
+    if (isAuthenticated) {
         // In a real app, use JWT or sessions. For this template, we'll return success.
         // The user mentioned "simple cookie-based auth".
         res.setHeader('Set-Cookie', `auth=true; Path=/; SameSite=Strict; Max-Age=315360000`);

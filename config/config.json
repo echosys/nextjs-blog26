@@ -1,0 +1,28 @@
+{
+    "runtimeNotes": "local applies to localhost and non-production development flows; deploy applies to hosted environments.",
+    "local": {
+        "loginMode": "json",
+        "mongoBlogMode": "json",
+        "postgresBlogMode": "json"
+    },
+    "deploy": {
+        "target": "vercel",
+        "loginMode": "mongo",
+        "mongoBlogMode": "mongo",
+        "postgresBlogMode": "postgres"
+    },
+    "mongo": {
+        "databaseName": "blog_2026",
+        "loginCollection": "blog_login",
+        "blogCollection": "blog_entry"
+    },
+    "postgres": {
+        "blogTable": "posts",
+        "attachmentTable": "post_chunks"
+    },
+    "json": {
+        "loginFile": "config/user.json",
+        "mongoBlogFile": "config/localBlogData_mongo.json",
+        "postgresBlogFile": "config/localBlogData_postgres.json"
+    }
+}

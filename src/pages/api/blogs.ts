@@ -1,25 +1,14 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import clientPromise from '../../lib/mongodb';
-import { ObjectId, Db } from 'mongodb';
-
-async function cleanupTags(db: Db, tags: string[]) {
-  if (!tags || tags.length === 0) return;
-
-  const collection = db.collection('blog_entry');
-  const loginCollection = db.collection('blog_login');
-
-  for (const tag of tags) {
-    const count = await collection.countDocuments({ tags: tag });
-    if (count === 0) {
-      await loginCollection.updateOne({}, { $pull: { tags: tag } } as any);
-    }
-  }
-}
+import {
+  createMongoBlog,
+  deleteMongoBlog,
+  getMongoBlogById,
+  listMongoBlogs,
+  updateMongoBlog,
+} from '../../lib/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const client = await clientPromise;
-  const db = client.db('blog_2026');
-  const collection = db.collection('blog_entry');
+  const host = req.headers.host;
 
   if (req.method === 'GET') {
     const page = parseInt(req.query.page as string) || 1;
@@ -30,82 +19,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Single post fetch by id
     if (id) {
-      const post = await collection.findOne({ _id: new ObjectId(id) });
+      const post = await getMongoBlogById(id, host);
       if (!post) return res.status(404).json({ error: 'Post not found' });
       return res.status(200).json(post);
     }
 
-    let query = {};
-    if (tag) {
-      const tagList = tag.split(',').map(t => t.trim()).filter(Boolean);
-      if (tagList.length > 0) {
-        query = { tags: { $all: tagList } };
-      }
-    }
+    const { blogs, total, totalPages } = await listMongoBlogs({ page, limit, tag, host });
 
-    const blogs = await collection.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .toArray();
-
-    const total = await collection.countDocuments(query);
-
-    res.status(200).json({ blogs, total, page, totalPages: Math.ceil(total / limit) });
+    res.status(200).json({ blogs, total, page, totalPages });
   } else if (req.method === 'POST') {
     const { title, content, attachment, attachmentName, tags } = req.body;
-    const tagList = tags ? (Array.isArray(tags) ? tags : tags.split(',').map((t: string) => t.trim()).filter(Boolean)) : [];
-
-    const result = await collection.insertOne({
-      title,
-      content,
-      attachment,
-      attachmentName,
-      tags: tagList,
-      createdAt: new Date()
-    });
-
-    if (tagList.length > 0) {
-      const loginCollection = db.collection('blog_login');
-      await loginCollection.updateOne({}, { $addToSet: { tags: { $each: tagList } } });
-    }
+    const result = await createMongoBlog({ title, content, attachment, attachmentName, tags }, host);
 
     res.status(201).json(result);
   } else if (req.method === 'PUT') {
     const { id, title, content, attachment, attachmentName, tags } = req.body;
-    const tagList = tags ? (Array.isArray(tags) ? tags : tags.split(',').map((t: string) => t.trim()).filter(Boolean)) : [];
-
-    const oldPost = await collection.findOne({ _id: new ObjectId(id) });
-    const oldTags = oldPost?.tags || [];
-
-    const result = await collection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { title, content, attachment, attachmentName, tags: tagList, updatedAt: new Date() } }
-    );
-
-    if (tagList.length > 0) {
-      const loginCollection = db.collection('blog_login');
-      await loginCollection.updateOne({}, { $addToSet: { tags: { $each: tagList } } });
-    }
-
-    const removedTags = oldTags.filter((t: string) => !tagList.includes(t));
-    if (removedTags.length > 0) {
-      await cleanupTags(db, removedTags);
-    }
+    const result = await updateMongoBlog(id, { title, content, attachment, attachmentName, tags }, host);
 
     res.status(200).json(result);
   } else if (req.method === 'DELETE') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'ID required' });
 
-    const postToDelete = await collection.findOne({ _id: new ObjectId(id as string) });
-    const tagsToCleanup = postToDelete?.tags || [];
-
-    const result = await collection.deleteOne({ _id: new ObjectId(id as string) });
-
-    if (tagsToCleanup.length > 0) {
-      await cleanupTags(db, tagsToCleanup);
-    }
+    const result = await deleteMongoBlog(id as string, host);
 
     res.status(200).json(result);
   } else {

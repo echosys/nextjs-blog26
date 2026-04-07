@@ -9,6 +9,8 @@ type DbStatus = 'idle' | 'checking' | 'ok' | 'error';
 interface DbState {
     status: DbStatus;
     host: string;
+    label?: string;
+    mode?: string;
     message?: string;
 }
 
@@ -53,11 +55,11 @@ export default function LoginForm() {
         setMongo({ status: 'checking', host: '' });
         fetch('/api/status')
             .then(async res => {
+                const d = await res.json().catch(() => ({}));
                 if (res.ok) {
-                    setMongo({ status: 'ok', host: 'MongoDB Atlas' });
+                    setMongo({ status: 'ok', host: d.host || 'Connected', label: d.label, mode: d.mode });
                 } else {
-                    const d = await res.json().catch(() => ({}));
-                    setMongo({ status: 'error', host: '', message: d.message });
+                    setMongo({ status: 'error', host: d.host || '', label: d.label, mode: d.mode, message: d.message });
                 }
             })
             .catch(() => setMongo({ status: 'error', host: '' }));
@@ -68,9 +70,9 @@ export default function LoginForm() {
             .then(async res => {
                 const d = await res.json().catch(() => ({}));
                 if (res.ok) {
-                    setPg({ status: 'ok', host: d.host || 'Postgres' });
+                    setPg({ status: 'ok', host: d.host || 'Connected', label: d.label, mode: d.mode });
                 } else {
-                    setPg({ status: 'error', host: d.host || '', message: d.message });
+                    setPg({ status: 'error', host: d.host || '', label: d.label, mode: d.mode, message: d.message });
                 }
             })
             .catch(() => setPg({ status: 'error', host: '' }));
@@ -117,9 +119,9 @@ export default function LoginForm() {
                     <div className="px-4 py-3 flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
                             <StatusDot status={mongo.status} />
-                            <span className="text-sm font-medium text-slate-300 shrink-0">MongoDB</span>
+                            <span className="text-sm font-medium text-slate-300 shrink-0">Login/Auth</span>
                             <span className="text-xs text-slate-600 font-mono truncate hidden sm:block">
-                                (login / auth)
+                                ({mongo.label || 'storage'}{mongo.mode ? `:${mongo.mode}` : ''})
                             </span>
                         </div>
                         <StatusLabel status={mongo.status} host={mongo.host} />
@@ -128,9 +130,9 @@ export default function LoginForm() {
                     <div className="px-4 py-3 flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
                             <StatusDot status={pg.status} />
-                            <span className="text-sm font-medium text-slate-300 shrink-0">Postgres</span>
+                            <span className="text-sm font-medium text-slate-300 shrink-0">PG Blog</span>
                             <span className="text-xs text-slate-600 font-mono truncate hidden sm:block">
-                                (blog content)
+                                ({pg.label || 'storage'}{pg.mode ? `:${pg.mode}` : ''})
                             </span>
                         </div>
                         <StatusLabel status={pg.status} host={pg.host} />
@@ -187,12 +189,12 @@ export default function LoginForm() {
 
                 {mongoDown && (
                     <p className="text-center text-xs text-rose-400 mt-2">
-                        Login is unavailable — MongoDB is unreachable.
+                        Login is unavailable for the active auth storage.
                     </p>
                 )}
                 {pg.status === 'error' && !mongoDown && (
                     <p className="text-center text-xs text-yellow-500 mt-1">
-                        Postgres is unreachable — Mongo Blog will work, Postgres Blog won&apos;t.
+                        The configured PG blog storage is unavailable.
                     </p>
                 )}
             </form>

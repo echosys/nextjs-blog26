@@ -1,0 +1,16 @@
+{
+  "posts": [
+    {
+      "id": "1",
+      "title": "Mongo Test Post",
+      "content": "This is a test post for Mongo",
+      "tags": [
+        "mongo",
+        "test"
+      ],
+      "attachment": "",
+      "attachmentName": "",
+      "createdAt": "2026-04-06T21:20:22.525Z"
+    }
+  ]
+}
