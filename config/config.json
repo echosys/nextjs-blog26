@@ -1,5 +1,6 @@
 {
     "runtimeNotes": "local applies to localhost and non-production development flows; deploy applies to hosted environments.",
+    "inlineImageMaxSizeMB": 3,
     "local": {
         "loginMode": "json",
         "mongoBlogMode": "json",
