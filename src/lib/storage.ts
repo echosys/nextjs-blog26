@@ -240,7 +240,14 @@ async function syncMongoTagCache(host?: string | null) {
   await loginCollection.updateOne(TAG_CACHE_FILTER, { $set: { tags } }, { upsert: true });
 }
 
+// Cache schema initialization per Lambda instance to avoid re-running CREATE TABLE/INDEX on every request
+let pgSchemaInitPromise: Promise<{ postsTable: string; chunksTable: string }> | null = null;
+
 async function ensurePostgresSchema(host?: string | null) {
+  // Use cached result if already initialized in this Lambda instance
+  if (pgSchemaInitPromise) return pgSchemaInitPromise;
+
+  pgSchemaInitPromise = (async () => {
   const { postgres, runtime } = getRuntimeStorageConfig(host);
   const postsTable = assertSqlIdentifier(postgres.blogTable);
   const chunksTable = assertSqlIdentifier(postgres.attachmentTable);
@@ -279,6 +286,12 @@ async function ensurePostgresSchema(host?: string | null) {
     postsTable,
     chunksTable,
   };
+  })();
+
+  // If init fails, clear cache so next request retries
+  pgSchemaInitPromise.catch(() => { pgSchemaInitPromise = null; });
+
+  return pgSchemaInitPromise;
 }
 
 export async function authenticateUser(login: string, pw: string, host?: string | null) {

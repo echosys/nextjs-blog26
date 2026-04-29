@@ -1,19 +1,10 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 export default function ActiveNavLink({ href, children }: { href: string; children: React.ReactNode }) {
     const pathname = usePathname();
-    const router = useRouter();
     const isActive = pathname?.startsWith(href) ?? false;
-
-    // Eagerly prefetch the other tab's route so switching feels instant
-    useEffect(() => {
-        if (!isActive) {
-            router.prefetch(href);
-        }
-    }, [href, isActive, router]);
 
     return (
         <Link

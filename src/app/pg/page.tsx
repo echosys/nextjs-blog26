@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Tag, CheckCircle2, X } from "lucide-react";
+import { Plus, Tag, CheckCircle2, X, AlertTriangle } from "lucide-react";
 import { headers } from "next/headers";
 import PgPostList from "./PgPostList";
 import { listPgBlogs } from "../../lib/storage";
@@ -8,9 +8,10 @@ export const dynamic = 'force-dynamic';
 
 async function getPgPosts(tag?: string, host?: string | null) {
     try {
-        return await listPgBlogs({ tag, host });
-    } catch {
-        return { posts: [], tags: [] };
+        return { ...(await listPgBlogs({ tag, host })), error: null };
+    } catch (err: any) {
+        console.error('[pg/page] listPgBlogs failed:', err?.message);
+        return { posts: [], tags: [], error: err?.message ?? 'Database error' };
     }
 }
 
@@ -22,11 +23,17 @@ export default async function PgBlogPage({
     const { tag, success } = await searchParams;
     const selectedTag = tag || 'all';
     const headerStore = await headers();
-    const { posts, tags } = await getPgPosts(selectedTag, headerStore.get('host'));
+    const { posts, tags, error } = await getPgPosts(selectedTag, headerStore.get('host'));
     const showSuccess = success === 'true';
 
     return (
         <div className="space-y-4">
+            {error && (
+                <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl flex items-center gap-3 text-rose-400">
+                    <AlertTriangle size={18} className="shrink-0" />
+                    <span className="text-sm">Database error — {error}. <a href="/pg" className="underline hover:text-rose-300">Retry</a></span>
+                </div>
+            )}
             {showSuccess && (
                 <div className="bg-teal-500/10 border border-teal-500/20 p-4 rounded-xl flex items-center justify-between">
                     <div className="flex items-center gap-3 text-teal-400">

@@ -32,7 +32,7 @@ Default behavior in the current config:
 - `/mongo` lists posts from the configured Mongo-route backend.
 - `all` tag behavior is normalized to no-filter so latest posts render consistently.
 - Create, edit, delete, and attachment handling still use `/api/blogs`.
-- In JSON mode, changes persist only to `config/localBlogData_mongo.json`.
+- In JSON mode, changes persist only to `config/localBlobData_mongo.json`.
 - In Mongo mode, changes persist to the configured Mongo blog collection.
 - Create Post page uses the same two-column layout as Edit Post (sidebar + full-height content area).
 - Content editor is a WYSIWYG `contenteditable` div (ContentEditor component). Pasting an image:

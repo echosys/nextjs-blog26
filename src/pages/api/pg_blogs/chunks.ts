@@ -20,7 +20,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await uploadPgChunk(parseInt(id as string), parseInt(index as string), data, req.headers.host);
         return res.status(200).json({ success: true });
     } catch (error: any) {
-        return res.status(500).json({ error: error.message });
+        console.error('[chunks] uploadPgChunk failed:', error?.message, error?.stack);
+        return res.status(500).json({ error: error?.message ?? 'Internal server error' });
     }
 }
 

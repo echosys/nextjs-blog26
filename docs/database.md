@@ -186,7 +186,58 @@ Bootstrap behavior:
 - creates both tables if missing
 - creates indexes for `created_at`, `tags`, and `(post_id, chunk_index)`
 
-## Required Environment Variables
+### Schema Initialization Caching (Production Optimization)
+
+On Vercel and other serverless platforms, a Lambda instance may execute many requests. The schema creation code (`ensurePostgresSchema`) runs only once per instance:
+
+```typescript
+let pgSchemaInitPromise: Promise<{ postsTable: string; chunksTable: string }> | null = null;
+
+async function ensurePostgresSchema(host?: string | null) {
+  if (pgSchemaInitPromise) return pgSchemaInitPromise; // Reuse cached result
+  
+  pgSchemaInitPromise = (async () => {
+    // CREATE TABLE IF NOT EXISTS... (lines omitted)
+    // CREATE INDEX... (lines omitted)
+    return { postsTable, chunksTable };
+  })();
+  
+  // Clear cache on error so next request retries
+  pgSchemaInitPromise.catch(() => { pgSchemaInitPromise = null; });
+  
+  return pgSchemaInitPromise;
+}
+```
+
+This reduces Lambda execution time and avoids timeouts from repeated schema operations.
+
+## API Body Parser Limits
+
+- `/api/blogs` (Mongo): 4.5 MB (accommodates 3 MB inline images + JSON envelope)
+- `/api/pg_blogs` (Postgres main): 4.5 MB
+- `/api/pg_blogs/chunks` (chunk upload): 4 MB (each 2 MB binary chunk becomes ~2.67 MB base64)
+
+## Error Handling & Observability
+
+### Postgres Database Errors
+
+When database operations fail on the Postgres `/pg` list page (`src/app/pg/page.tsx`):
+
+1. **UI Error Banner**: A red error banner displays the error message with a "Retry" link instead of silently showing "No posts found".
+2. **Server Logs**: `console.error()` is called with the error message so it appears in Vercel function logs.
+3. **Schema Cache Recovery**: If `ensurePostgresSchema()` fails (line 1 of Lambda), `pgSchemaInitPromise` is cleared (reset to `null`) so the next request retries the schema check.
+
+### Chunk Upload Error Logging
+
+The `/api/pg_blogs/chunks` endpoint logs chunk upload failures with full stack traces to both console and stderr:
+
+```typescript
+console.error('[chunks] uploadPgChunk failed:', error?.message, error?.stack);
+```
+
+This enables quick root-cause diagnosis in Vercel function logs when large file uploads time out or when database writes fail mid-upload.
+
+### Environment Variables
 
 - `MONGODB_URI`: required whenever a runtime profile uses MongoDB.
 - `POSTGRES_URL`: required whenever a runtime profile uses Postgres.

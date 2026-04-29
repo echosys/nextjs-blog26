@@ -45,6 +45,14 @@ This project now uses a config-driven storage layer so the same application code
 - Backend selection changes only storage target, not filtering semantics.
 - Local JSON behavior mirrors deploy behavior: Mongo and PG routes are isolated from each other.
 
+## Store Bootstrap Optimization
+
+### Postgres Schema Caching
+- `ensurePostgresSchema` runs CREATE TABLE/INDEX IF NOT EXISTS queries on first use within each Lambda instance.
+- Results are cached in a module-level Promise (`pgSchemaInitPromise`) to avoid redundant schema operations on subsequent requests in the same process.
+- If schema init fails, the cache is cleared so the next request retries.
+- This reduces Vercel serverless timeout risk by eliminating repeated schema overhead.
+
 ## Bootstrap Behavior
 
 The adapter layer performs storage bootstrap before use.
