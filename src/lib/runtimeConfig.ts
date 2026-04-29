@@ -8,6 +8,8 @@ export type PostgresBlogMode = 'json' | 'postgres';
 type RuntimeConfig = {
   readonly runtimeNotes: string;
   readonly inlineImageMaxSizeMB: number;
+  readonly inlineThumbnailMaxPx: number;
+  readonly inlineThumbnailMaxResizePx: number;
   readonly local: {
     readonly loginMode: LoginMode;
     readonly mongoBlogMode: MongoBlogMode;

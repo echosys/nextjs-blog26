@@ -58,7 +58,7 @@ export default function MongoPostList({ blogs }: MongoPostListProps) {
                 <MongoDeleteButton id={String(blog._id)} />
               </div>
             </div>
-            <p className="text-slate-400 line-clamp-3 mb-6 leading-relaxed break-words">{stripHtml(blog.content)}</p>
+            <p className="text-slate-400 line-clamp-3 mb-6 leading-relaxed break-all">{stripHtml(blog.content)}</p>
             <div className="flex justify-between items-center text-sm pt-4 border-t border-slate-800/50">
               <span className="text-slate-500 font-medium">
                 {new Date(blog.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}

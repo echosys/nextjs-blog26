@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
-import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon } from "lucide-react";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import ContentEditor, { type ContentEditorRef } from "../../../components/ContentEditor";
+import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../components/ContentEditor";
 
 export default function MongoNewPost() {
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileObj, setFileObj] = useState<File | null>(null);
+    const [inlineImages, setInlineImages] = useState<InlineImageItem[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -15,6 +16,8 @@ export default function MongoNewPost() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<ContentEditorRef>(null);
     const router = useRouter();
+
+    const handleRemoveInline = (id: string) => { editorRef.current?.removeInlineImage(id); };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
@@ -107,8 +110,26 @@ export default function MongoNewPost() {
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:ring-2 focus:ring-teal-500 outline-none transition-all placeholder:text-slate-700 disabled:opacity-50"
                             placeholder="e.g. tech, news, personal" />
                     </div>
+                    {inlineImages.length > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1"><ImageIcon size={11} /> Inline Images</p>
+                            <div className="space-y-1">
+                                {inlineImages.map(img => (
+                                    <div key={img.id} className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5">
+                                        <img src={img.dataUrl} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-slate-300 truncate">{img.fileName}</p>
+                                            <p className="text-[10px] text-slate-600">{img.sizeKB} KB</p>
+                                        </div>
+                                        <button type="button" onClick={() => handleRemoveInline(img.id)}
+                                            className="text-slate-600 hover:text-rose-400 transition-colors shrink-0"><X size={13} /></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-slate-400">Attachment (optional)</label>
+                        <label className="text-sm font-medium text-slate-400">File Attachment (optional)</label>
                         {fileName ? (
                             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
                                 <Upload size={13} className="text-teal-400 shrink-0" />
@@ -136,7 +157,8 @@ export default function MongoNewPost() {
                         <label className="text-sm font-medium text-slate-400">Content <span className="ml-1 text-[11px] text-slate-600 font-normal">— paste an image to embed it inline</span></label>
                         {contentError && <span className="text-xs text-rose-400">Content is required</span>}
                     </div>
-                    <ContentEditor ref={editorRef} disabled={isSubmitting} hasError={contentError}  />
+                    <ContentEditor ref={editorRef} disabled={isSubmitting} hasError={contentError}
+                        onInlineImagesChange={setInlineImages} />
                 </section>
             </form>
         </div>

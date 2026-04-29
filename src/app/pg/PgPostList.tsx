@@ -65,7 +65,7 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
               </div>
             </div>
 
-            <p className="text-slate-400 line-clamp-3 mb-6 leading-relaxed break-words">
+            <p className="text-slate-400 line-clamp-3 mb-6 leading-relaxed break-all">
               {stripHtml(post.content)}
             </p>
 

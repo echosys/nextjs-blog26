@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
-import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import ContentEditor, { type ContentEditorRef } from "../../../../components/ContentEditor";
+import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../../components/ContentEditor";
 
 type MongoPost = {
     title: string;
@@ -17,6 +17,7 @@ export default function MongoEditPost() {
     const [post, setPost] = useState<MongoPost | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
     const [fileObj, setFileObj] = useState<File | null>(null);
+    const [inlineImages, setInlineImages] = useState<InlineImageItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -27,6 +28,8 @@ export default function MongoEditPost() {
     const router = useRouter();
     const params = useParams();
     const id = (params?.id as string) ?? "";
+
+    const handleRemoveInline = (imgId: string) => { editorRef.current?.removeInlineImage(imgId); };
 
     useEffect(() => {
         async function load() {
@@ -152,6 +155,24 @@ export default function MongoEditPost() {
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:ring-2 focus:ring-teal-500 outline-none transition-all placeholder:text-slate-700 disabled:opacity-50"
                             defaultValue={post.tags?.join(", ")} placeholder="e.g. tech, news, personal" />
                     </div>
+                    {inlineImages.length > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1"><ImageIcon size={11} /> Inline Images</p>
+                            <div className="space-y-1">
+                                {inlineImages.map(img => (
+                                    <div key={img.id} className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5">
+                                        <img src={img.dataUrl} alt="" className="w-8 h-8 object-cover rounded shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-slate-300 truncate">{img.fileName}</p>
+                                            <p className="text-[10px] text-slate-600">{img.sizeKB} KB</p>
+                                        </div>
+                                        <button type="button" onClick={() => handleRemoveInline(img.id)}
+                                            className="text-slate-600 hover:text-rose-400 transition-colors shrink-0"><X size={13} /></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-400">Attachment</label>
                         {fileName ? (
@@ -181,7 +202,8 @@ export default function MongoEditPost() {
                         <label className="text-sm font-medium text-slate-400">Content <span className="ml-1 text-[11px] text-slate-600 font-normal">— paste an image to embed it inline</span></label>
                         {contentError && <span className="text-xs text-rose-400">Content is required</span>}
                     </div>
-                    <ContentEditor ref={editorRef} disabled={isSubmitting} hasError={contentError} initialContent={post.content} />
+                    <ContentEditor ref={editorRef} disabled={isSubmitting} hasError={contentError} initialContent={post.content}
+                        onInlineImagesChange={setInlineImages} />
                 </section>
             </form>
         </div>
