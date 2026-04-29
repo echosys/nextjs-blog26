@@ -36,19 +36,19 @@ type ContentEditorProps = {
   onInlineImagesChange?: (images: InlineImageItem[]) => void;
 };
 
-async function compressImageToDataUrl(blob: Blob, maxMB: number, thumbPx: number): Promise<{ dataUrl: string; sizeKB: number }> {
+async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ dataUrl: string; sizeKB: number }> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
       const maxBytes = maxMB * 1024 * 1024;
-      // First scale to thumbnail display size
+      // Keep reasonable max resolution (2400px) but do NOT scale to thumbnail — thumbnail is CSS only
       let w = img.naturalWidth;
       let h = img.naturalHeight;
-      const maxDim = Math.max(w, h);
-      if (maxDim > thumbPx) {
-        const ratio = thumbPx / maxDim;
+      const MAX_DIM = 2400;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
         w = Math.round(w * ratio);
         h = Math.round(h * ratio);
       }
@@ -60,9 +60,19 @@ async function compressImageToDataUrl(blob: Blob, maxMB: number, thumbPx: number
       let quality = 0.85;
       let dataUrl = canvas.toDataURL("image/jpeg", quality);
       let bytes = Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
-      // Compress further if still over maxMB (shouldn't happen for thumbnails but guard anyway)
+      // Reduce quality to fit under maxMB
       while (bytes > maxBytes && quality > 0.3) {
         quality = Math.round((quality - 0.1) * 10) / 10;
+        dataUrl = canvas.toDataURL("image/jpeg", quality);
+        bytes = Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
+      }
+      // If still too big, also reduce resolution
+      while (bytes > maxBytes && (w > 400 || h > 400)) {
+        w = Math.round(w * 0.8);
+        h = Math.round(h * 0.8);
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(img, 0, 0, w, h);
         dataUrl = canvas.toDataURL("image/jpeg", quality);
         bytes = Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
       }
@@ -116,7 +126,13 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
 
     useImperativeHandle(ref, () => ({
       getHTML: () => divRef.current?.innerHTML ?? "",
-      isEmpty: () => !divRef.current?.innerText?.trim(),
+      isEmpty: () => {
+        const div = divRef.current;
+        if (!div) return true;
+        if (div.innerText?.trim()) return false;
+        if (div.querySelector("img[data-inline-id]")) return false;
+        return true;
+      },
       getInlineImages: collectInlineImages,
       removeInlineImage: (id: string) => {
         const img = divRef.current?.querySelector(`img[data-inline-id="${id}"]`);
@@ -138,7 +154,10 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     }, [initialContent, collectInlineImages, onInlineImagesChange]);
 
     const updatePlaceholder = () => {
-      setShowPlaceholder(!divRef.current?.innerText?.trim());
+      const div = divRef.current;
+      const hasText = Boolean(div?.innerText?.trim());
+      const hasImage = Boolean(div?.querySelector("img[data-inline-id]"));
+      setShowPlaceholder(!hasText && !hasImage);
     };
 
     const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -177,9 +196,11 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       setIsPasting(true);
       try {
         const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const { dataUrl, sizeKB } = await compressImageToDataUrl(blob, MAX_IMAGE_MB, THUMB_PX);
+        // Preserve original filename if the clipboard item has one (works for copied files, not screenshots)
+        const originalName = (blob as File).name && !(blob as File).name.startsWith("image.") ? (blob as File).name : null;
+        const { dataUrl, sizeKB } = await compressImageToDataUrl(blob, MAX_IMAGE_MB);
         const img = makeImgElement(dataUrl, id, THUMB_PX);
-        img.dataset.fileName = `pasted-${id}.jpg`;
+        img.dataset.fileName = originalName ?? `pasted-${id}.jpg`;
         img.dataset.sizeKb = String(sizeKB);
         pending.replaceWith(img);
         const s = window.getSelection();

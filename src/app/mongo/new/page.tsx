@@ -1,8 +1,7 @@
 "use client";
 import Link from "next/link";
-import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon, Download } from "lucide-react";
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../components/ContentEditor";
 
 export default function MongoNewPost() {
@@ -15,8 +14,6 @@ export default function MongoNewPost() {
     const [contentError, setContentError] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<ContentEditorRef>(null);
-    const router = useRouter();
-
     const handleRemoveInline = (id: string) => { editorRef.current?.removeInlineImage(id); };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,8 +58,7 @@ export default function MongoNewPost() {
             }
             setUploadProgress(100);
             setUploadStatus("Done!");
-            router.refresh();
-            router.push("/mongo?success=true");
+            window.location.href = "/mongo?success=true";
         } catch (err: any) {
             setUploadStatus("Failed: " + (err.message ?? "Please try again."));
             setIsSubmitting(false);
@@ -121,6 +117,8 @@ export default function MongoNewPost() {
                                             <p className="text-xs text-slate-300 truncate">{img.fileName}</p>
                                             <p className="text-[10px] text-slate-600">{img.sizeKB} KB</p>
                                         </div>
+                                        <a href={img.dataUrl} download={img.fileName}
+                                            className="text-slate-600 hover:text-teal-400 transition-colors shrink-0"><Download size={13} /></a>
                                         <button type="button" onClick={() => handleRemoveInline(img.id)}
                                             className="text-slate-600 hover:text-rose-400 transition-colors shrink-0"><X size={13} /></button>
                                     </div>
