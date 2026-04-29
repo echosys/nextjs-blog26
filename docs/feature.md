@@ -35,9 +35,10 @@ Default behavior in the current config:
 - In JSON mode, changes persist only to `config/localBlogData_mongo.json`.
 - In Mongo mode, changes persist to the configured Mongo blog collection.
 - Create Post page uses the same two-column layout as Edit Post (sidebar + full-height content area).
-- Inline image paste: pasting an image into the content textarea compresses it (to `inlineImageMaxSizeMB` from config) and embeds it as a markdown data-URL reference in the content; a thumbnail row appears in the Attachments section with an `inline ✓` status badge.
-- Attachments section shows compact rows (thumbnail/icon, filename, size, status, × remove) instead of a single large upload button.
-- One manual file attachment is supported per post (uploaded on submit as base64).
+- Content editor is a WYSIWYG `contenteditable` div (ContentEditor component). Pasting an image compresses it (to `inlineImageMaxSizeMB` from config, default 3 MB) via `canvas.toBlob` and inserts it as an `<img>` element at the cursor — the image is visible inline while editing.
+- Content is stored as raw HTML. List previews strip HTML tags for display. The preview modal renders HTML via `dangerouslySetInnerHTML` (script tags and `on*` event attributes sanitized before render).
+- One manual file attachment is supported per post (uploaded on submit as base64). File attachments are separate from inline editor images and appear only in the sidebar.
+- API body parser raised to 4.5 MB to accommodate inline image content.
 
 ### PG Blog Route
 
@@ -46,9 +47,9 @@ Default behavior in the current config:
 - In JSON mode, changes persist only to `config/localBlogData_postgres.json`.
 - In Postgres mode, metadata persists to the configured blog table and attachments to the configured chunk table.
 - Create Post page uses the same two-column layout as Edit Post (sidebar + full-height content area).
-- Inline image paste: same compress-and-embed flow as Mongo; image size limit driven by `inlineImageMaxSizeMB` config.
-- Attachments section shows compact rows; one manual file attachment uploaded via chunked upload on submit.
-- Tab navigation: `loading.tsx` makes the blog list skeleton appear immediately on tab click; `router.prefetch` in `ActiveNavLink` pre-warms the other tab's route while the user is on the current tab.
+- Content editor uses the same WYSIWYG `contenteditable` div (ContentEditor) as the Mongo route.
+- API body parser is unlimited for the Postgres route because inline image content goes through the standard post body (which is also raised to 4.5 MB). Large file attachments continue to go through the chunk upload path (`/api/pg_blogs/chunks`) which supports unlimited sizes.
+- Attachments section shows one compact file row with an × remove button when a file is selected, and a dashed-border "Add file attachment" button when empty.
 
 ### Footer Runtime Indicators
 

@@ -10,6 +10,10 @@ interface PgPostListProps {
   posts: any[];
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
@@ -61,8 +65,8 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
               </div>
             </div>
 
-            <p className="text-slate-400 line-clamp-3 mb-6 leading-relaxed whitespace-pre-wrap">
-              {post.content}
+            <p className="text-slate-400 line-clamp-3 mb-6 leading-relaxed break-words">
+              {stripHtml(post.content)}
             </p>
 
             <div className="flex justify-between items-center text-sm pt-4 border-t border-slate-800/50">

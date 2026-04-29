@@ -7,6 +7,14 @@ import {
   updateMongoBlog,
 } from '../../lib/storage';
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '4.5mb',
+    },
+  },
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const host = req.headers.host;
 

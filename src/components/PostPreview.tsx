@@ -119,9 +119,14 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
             </div>
 
             <div className="prose prose-invert max-w-none">
-              <p className="text-slate-300 text-base leading-relaxed whitespace-pre-wrap">
-                {post.content}
-              </p>
+              <div
+                className="text-slate-300 text-base leading-relaxed break-words [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2"
+                dangerouslySetInnerHTML={{
+                  __html: post.content
+                    .replace(/<script[\s\S]*?<\/script>/gi, '')
+                    .replace(/\s+on\w+="[^"]*"/gi, '')
+                }}
+              />
             </div>
 
             {post.attachment && (
