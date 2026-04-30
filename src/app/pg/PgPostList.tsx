@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Edit2, Download } from 'lucide-react';
 import PgDeleteButton from './PgDeleteButton';
 import PostPreview from "../../components/PostPreview";
-import { parseAttachmentMetadata } from "../../lib/inlineImages";
+import { parseAttachmentMetadata, formatBytes } from "../../lib/inlineImages";
 
 interface PgPostListProps {
   posts: any[];
@@ -28,6 +28,7 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
       createdAt: post.created_at,
       attachment: meta.file?.name ? `/api/pg_blogs/download/${post.id}` : undefined,
       attachmentName: meta.file?.name ?? undefined,
+      attachmentSize: meta.file?.size ?? undefined,
       inlineImagesMeta: meta.inline_images ?? [],
     };
   });
@@ -80,15 +81,16 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
                   month: 'short', day: 'numeric', year: 'numeric'
                 })}
               </span>
-              {parseAttachmentMetadata(post.attachment_name).file?.name && (
+              {posts[index].attachmentName && (
                 <div onClick={e => e.stopPropagation()}>
                   <a
                     href={`/api/pg_blogs/download/${post.id}`}
-                    download={parseAttachmentMetadata(post.attachment_name).file!.name}
+                    download={posts[index].attachmentName}
                     className="flex items-center gap-2 text-teal-400 bg-teal-400/10 px-3 py-1.5 rounded-full hover:bg-teal-400/20 transition-all font-medium"
                   >
                     <Download size={14} />
-                    <span className="truncate max-w-[140px]">{parseAttachmentMetadata(post.attachment_name).file!.name}</span>
+                    <span className="truncate max-w-[110px]">{posts[index].attachmentName}</span>
+                    {posts[index].attachmentSize != null && <span className="text-slate-500 shrink-0">{formatBytes(posts[index].attachmentSize!)}</span>}
                   </a>
                 </div>
               )}

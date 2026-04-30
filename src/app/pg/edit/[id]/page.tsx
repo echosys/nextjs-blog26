@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon, Dow
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../../components/ContentEditor";
-import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, parseAttachmentMetadata, type InlineImageMeta, type FileAttachmentMeta } from "../../../../lib/inlineImages";
+import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, parseAttachmentMetadata, formatBytes, type InlineImageMeta, type FileAttachmentMeta } from "../../../../lib/inlineImages";
 import { loadInlineImagesForEdit } from "../../../../lib/useInlineImages";
 
 const CHUNK_SIZE = 1024 * 1024 * 2;
@@ -102,7 +102,7 @@ export default function PgEditPost() {
             if (hasNewFile && fileObj) {
                 // Case A: new file selected — reassign ALL chunk indices from scratch
                 fileChunkCount = Math.ceil(fileObj.size / CHUNK_SIZE);
-                fileMeta = { name: fileObj.name, chunks: Array.from({ length: fileChunkCount }, (_, i) => i) };
+                fileMeta = { name: fileObj.name, chunks: Array.from({ length: fileChunkCount }, (_, i) => i), size: fileObj.size };
             } else if (isRemovingFile) {
                 // Case B: file removed — no file chunks to upload
                 fileChunkCount = 0;
@@ -201,6 +201,11 @@ export default function PgEditPost() {
     );
 
     const uploadPct = totalMB > 0 ? `${uploadedMB}MB / ${totalMB}MB (${uploadProgress}%)` : `${uploadProgress}%`;
+    // Attachment size for display: use new file size if a file was selected, otherwise read from stored metadata
+    const existingFileMeta = parseAttachmentMetadata(post.attachment_name ?? null).file;
+    const attachmentSizeLabel = fileObj
+        ? formatBytes(fileObj.size)
+        : existingFileMeta?.size != null ? formatBytes(existingFileMeta.size) : null;
 
     return (
         <div className="max-w-6xl mx-auto">
@@ -266,7 +271,14 @@ export default function PgEditPost() {
                         {fileName ? (
                             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
                                 <Upload size={13} className="text-teal-400 shrink-0" />
-                                <span className="text-slate-300 text-xs truncate flex-1 min-w-0">{fileName}</span>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-300 truncate">{fileName}</p>
+                                    {attachmentSizeLabel && <p className="text-[10px] text-slate-600">{attachmentSizeLabel}</p>}
+                                </div>
+                                {!fileObj && (
+                                    <a href={`/api/pg_blogs/download/${id}`} download={fileName}
+                                        className="text-slate-600 hover:text-teal-400 transition-colors shrink-0"><Download size={13} /></a>
+                                )}
                                 <button type="button" disabled={isSubmitting} onClick={() => { setFileName(null); setFileObj(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="text-slate-600 hover:text-rose-400 transition-colors shrink-0"><X size={13} /></button>
                             </div>
                         ) : (

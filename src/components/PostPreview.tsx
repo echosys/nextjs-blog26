@@ -5,6 +5,7 @@ import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, Tag
 import Link from 'next/link';
 import { usePgInlineImages, reconstructInlineImages } from '../lib/useInlineImages';
 import type { InlineImageMeta } from '../lib/inlineImages';
+import { formatBytes } from '../lib/inlineImages';
 
 interface Post {
   id: string;
@@ -16,6 +17,8 @@ interface Post {
   attachmentName?: string;
   /** Postgres only: inline image metadata for fetching chunks */
   inlineImagesMeta?: InlineImageMeta[];
+  /** Attachment file size in bytes (optional) */
+  attachmentSize?: number;
 }
 
 interface PostPreviewProps {
@@ -153,6 +156,9 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
                 >
                   {post.attachmentName ? <Download size={18} /> : <Paperclip size={18} />}
                   <span>{post.attachmentName || 'Download attachment'}</span>
+                  {post.attachmentSize != null && (
+                    <span className="text-slate-500 text-sm font-normal ml-1">{formatBytes(post.attachmentSize)}</span>
+                  )}
                 </a>
               </div>
             )}

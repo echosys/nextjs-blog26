@@ -5,6 +5,12 @@ import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../../components/ContentEditor";
 
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 type MongoPost = {
     title: string;
     content: string;
@@ -115,6 +121,13 @@ export default function MongoEditPost() {
     );
 
     const uploadPct = `${uploadProgress}%`;
+    // Attachment size: use new file size if selected, else estimate from loaded base64 data URL
+    const attachmentSizeBytes = fileObj
+        ? fileObj.size
+        : post.attachment
+            ? Math.round((post.attachment.length - post.attachment.indexOf(',') - 1) * 0.75)
+            : null;
+    const attachmentSizeLabel = attachmentSizeBytes != null ? formatBytes(attachmentSizeBytes) : null;
 
     return (
         <div className="max-w-6xl mx-auto">
@@ -180,7 +193,14 @@ export default function MongoEditPost() {
                         {fileName ? (
                             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
                                 <Upload size={13} className="text-teal-400 shrink-0" />
-                                <span className="text-slate-300 text-xs truncate flex-1 min-w-0">{fileName}</span>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-300 truncate">{fileName}</p>
+                                    {attachmentSizeLabel && <p className="text-[10px] text-slate-600">{attachmentSizeLabel}</p>}
+                                </div>
+                                {!fileObj && post?.attachment && (
+                                    <a href={post.attachment} download={fileName}
+                                        className="text-slate-600 hover:text-teal-400 transition-colors shrink-0"><Download size={13} /></a>
+                                )}
                                 <button type="button" disabled={isSubmitting} onClick={() => { setFileName(null); setFileObj(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="text-slate-600 hover:text-rose-400 transition-colors shrink-0"><X size={13} /></button>
                             </div>
                         ) : (

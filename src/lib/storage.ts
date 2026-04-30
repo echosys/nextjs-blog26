@@ -792,9 +792,14 @@ export async function getPgAttachment(id: number, host?: string | null) {
     [id, chunkIndices]
   );
   const dataByIndex = new Map<number, string>(chunkResult.rows.map((r: any) => [r.chunk_index, r.data]));
-  const fullData = chunkIndices.map(ci => dataByIndex.get(ci) ?? '').join('');
+  // Decode each base64 chunk to a Buffer individually before concatenating.
+  // Concatenating base64 strings with padding characters (=) then decoding once causes
+  // Node.js to stop decoding at the first padding, producing truncated output.
+  const fullBuffer = Buffer.concat(
+    chunkIndices.map(ci => Buffer.from(dataByIndex.get(ci) ?? '', 'base64'))
+  );
 
-  return { attachmentName: meta.file.name, buffer: Buffer.from(fullData, 'base64') };
+  return { attachmentName: meta.file.name, buffer: fullBuffer };
 }
 
 /**

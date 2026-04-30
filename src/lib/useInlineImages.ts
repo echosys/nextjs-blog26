@@ -52,9 +52,11 @@ export function reconstructInlineImages(htmlContent: string, state: InlineImageS
   let result = htmlContent;
   for (const [id, img] of Object.entries(state)) {
     if (img.dataUrl) {
+      // Find the complete <img> tag containing data-inline-image-id, then swap src="" inside it.
+      // Attribute order is not guaranteed, so we use a callback to do a targeted sub-replace.
       result = result.replace(
-        new RegExp(`(<img\\s+[^>]*data-inline-image-id="${id}"[^>]*)src=""`, 'g'),
-        `$1src="${img.dataUrl}"`
+        new RegExp(`<img\\b[^>]*\\bdata-inline-image-id="${id}"[^>]*>`, 'g'),
+        (match) => match.replace(/\bsrc=""/, `src="${img.dataUrl}"`)
       );
     }
   }

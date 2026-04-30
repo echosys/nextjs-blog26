@@ -6,6 +6,17 @@ import { Edit2, Download, Paperclip } from 'lucide-react';
 import MongoDeleteButton from './MongoDeleteButton';
 import PostPreview from "../../components/PostPreview";
 
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function estimateDataUrlBytes(dataUrl: string): number {
+    const commaIdx = dataUrl.indexOf(',');
+    return Math.round((dataUrl.length - commaIdx - 1) * 0.75);
+}
+
 interface MongoPostListProps {
   blogs: any[];
 }
@@ -25,6 +36,7 @@ export default function MongoPostList({ blogs }: MongoPostListProps) {
     createdAt: blog.createdAt,
     attachment: blog.attachment,
     attachmentName: blog.attachmentName,
+    attachmentSize: blog.attachment ? estimateDataUrlBytes(blog.attachment) : undefined,
   }));
 
   return (
@@ -66,9 +78,10 @@ export default function MongoPostList({ blogs }: MongoPostListProps) {
               {blog.attachment && (
                 <div onClick={e => e.stopPropagation()}>
                   <a href={blog.attachment} download={blog.attachmentName || 'attachment'}
-                    className="flex items-center gap-2 text-teal-400 bg-teal-400/10 px-3 py-1.5 rounded-full hover:bg-teal-400/20 transition-all font-medium min-w-0 max-w-[200px]">
+                    className="flex items-center gap-2 text-teal-400 bg-teal-400/10 px-3 py-1.5 rounded-full hover:bg-teal-400/20 transition-all font-medium min-w-0 max-w-[220px]">
                     {blog.attachmentName ? <Download size={14} className="shrink-0" /> : <Paperclip size={14} className="shrink-0" />}
                     <span className="truncate text-xs">{blog.attachmentName || 'Download attachment'}</span>
+                    {blog.attachment && <span className="text-slate-500 shrink-0 text-xs">{formatBytes(estimateDataUrlBytes(blog.attachment))}</span>}
                   </a>
                 </div>
               )}

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon, Download } from "lucide-react";
 import { useState, useRef } from "react";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../components/ContentEditor";
-import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, type InlineImageMeta, type FileAttachmentMeta } from "../../../lib/inlineImages";
+import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, formatBytes, type InlineImageMeta, type FileAttachmentMeta } from "../../../lib/inlineImages";
 
 const CHUNK_SIZE = 1024 * 1024 * 2;
 // Inline image chunks always start at this offset to avoid conflicting with file chunks (0..N-1)
@@ -58,6 +58,7 @@ export default function PgNewPost() {
             const fileMeta: FileAttachmentMeta | null = fileObj ? {
                 name: fileObj.name,
                 chunks: Array.from({ length: fileChunkCount }, (_, i) => i),
+                size: fileObj.size,
             } : null;
             
             // Step 2: Create post with clean content and full metadata
@@ -197,7 +198,10 @@ export default function PgNewPost() {
                         {fileName ? (
                             <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
                                 <Upload size={13} className="text-teal-400 shrink-0" />
-                                <span className="text-slate-300 text-xs truncate flex-1 min-w-0">{fileName}</span>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-300 truncate">{fileName}</p>
+                                    {fileObj && <p className="text-[10px] text-slate-600">{formatBytes(fileObj.size)}</p>}
+                                </div>
                                 <button type="button" disabled={isSubmitting} onClick={() => { setFileName(null); setFileObj(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="text-slate-600 hover:text-rose-400 transition-colors shrink-0"><X size={13} /></button>
                             </div>
                         ) : (
