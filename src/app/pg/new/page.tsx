@@ -6,6 +6,8 @@ import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../.
 import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, type InlineImageMeta, type FileAttachmentMeta } from "../../../lib/inlineImages";
 
 const CHUNK_SIZE = 1024 * 1024 * 2;
+// Inline image chunks always start at this offset to avoid conflicting with file chunks (0..N-1)
+const INLINE_BASE = 1000;
 
 export default function PgNewPost() {
     const [fileName, setFileName] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export default function PgNewPost() {
             const inlineImageMeta: InlineImageMeta[] = extractedImages.map((img, i) => ({
                 id: img.id,
                 name: img.name,
-                chunks: [fileChunkCount + i],
+                chunks: [INLINE_BASE + i],
             }));
             const fileMeta: FileAttachmentMeta | null = fileObj ? {
                 name: fileObj.name,

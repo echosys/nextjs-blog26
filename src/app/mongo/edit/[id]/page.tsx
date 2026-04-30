@@ -23,6 +23,7 @@ export default function MongoEditPost() {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [uploadStatus, setUploadStatus] = useState<string | null>(null);
     const [contentError, setContentError] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<ContentEditorRef>(null);
     const params = useParams();
@@ -59,6 +60,7 @@ export default function MongoEditPost() {
         const content = editorRef.current?.getHTML() ?? "";
         if (editorRef.current?.isEmpty()) { setContentError(true); return; }
         setContentError(false);
+        setSubmitError(null);
         setIsSubmitting(true);
         setUploadProgress(0);
         setUploadStatus("Updating post...");
@@ -95,7 +97,7 @@ export default function MongoEditPost() {
             setUploadStatus("Done!");
             window.location.href = "/mongo?success=true";
         } catch (err: any) {
-            setUploadStatus("Failed: " + (err.message ?? "Please try again."));
+            setSubmitError(err.message ?? "Save failed. Please try again.");
             setIsSubmitting(false);
         }
     };
@@ -196,6 +198,11 @@ export default function MongoEditPost() {
                         {isSubmitting ? <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Save size={20} />}
                         {isSubmitting ? "Saving..." : "Save Changes"}
                     </button>
+                    {submitError && (
+                        <div className="text-sm text-rose-400 bg-rose-400/10 border border-rose-400/20 rounded-xl px-4 py-3">
+                            {submitError}
+                        </div>
+                    )}
                 </aside>
                 <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 flex flex-col min-h-[70vh]">
                     <div className="flex items-center justify-between mb-3">

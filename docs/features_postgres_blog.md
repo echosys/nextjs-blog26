@@ -14,13 +14,23 @@ The `/pg` route provides a blog management interface backed by PostgreSQL (or a 
 
 Unlike MongoDB (which stores inline images directly in content), Postgres uses a **chunked storage model** to avoid database history bloat:
 
-- Paste an image into the editor; it is compressed to `inlineImageMaxSizeMB` MB (default **3 MB**) and inserted as an `<img>` at the cursor.
+- Paste an image into the editor; it is compressed to `inlineImageMaxSizeMB` MB (default **3 MB**) and inserted as an `<img>` at the cursor. Images already under 3 MB are stored without re-encoding.
 - Images are NOT stored as base64 data URLs in the content field. Instead:
   - Content stores placeholder `<img data-inline-image-id="uuid" alt="filename" src=""/>` tags
-  - Actual image data is stored in the `post_chunks` table with **negative chunk indices** (-1, -2, etc. for inline images; positive indices for file attachments)
-  - Image metadata is stored as JSON in the `attachment_name` field: `{ "file": "user.pdf", "inline_images": [{"id": "abc123", "name": "photo.jpg"}] }`
+  - Actual image data is stored in the `post_chunks` table. Each inline image occupies one chunk at a **fixed offset index** (starting at 1000)
+  - File attachment chunks occupy indices 0..F-1; inline image chunks occupy indices 1000, 1001 … (never overlap)
+  - Image metadata is stored as JSON in the `attachment_name` field:
+    ```json
+    {
+      "file": { "name": "user.pdf", "chunks": [0, 1, 2] },
+      "inline_images": [
+        { "id": "abc123", "name": "photo.jpg", "chunks": [1000] },
+        { "id": "def456", "name": "chart.jpg", "chunks": [1001] }
+      ]
+    }
+    ```
 - On render:
-  - Client fetches inline image chunks via `/api/pg_blogs/inline-images?id=postId&index=imageIndex`
+  - Client fetches each inline image chunk by its exact index via `/api/pg_blogs/inline-images?id=postId&chunkIndex=N`
   - Chunks are reconstructed into base64 data URLs
   - Placeholders are replaced with data URLs via client-side DOM manipulation
 
@@ -37,7 +47,7 @@ Unlike MongoDB (which stores inline images directly in content), Postgres uses a
 - Chunks are reassembled in the `post_chunks` table linked by `post_id`.
 - This mechanism supports arbitrarily large attachments (no Vercel body-parser bottleneck for attachments).
 - Download served by `/api/pg_blogs/download/[id]`.
-- On Edit, the existing attachment name is shown. Uploading a new file replaces all existing chunks (positive indices).
+- On Edit, the existing attachment name is shown. Uploading a new file replaces all existing file chunks (indices 0..F-1). Inline image chunks (indices 1000+) are always re-uploaded on save.
 
 ## API Limits
 
@@ -52,7 +62,7 @@ CREATE TABLE blogs (
   title TEXT NOT NULL,
   content TEXT NOT NULL,           -- Contains only placeholder <img> tags, no base64
   tags TEXT[] DEFAULT ARRAY[],
-  attachment_name TEXT,             -- JSON: { "file": "name", "inline_images": [...] }
+  attachment_name TEXT,             -- JSON: { file: {name, chunks:[]}, inline_images: [{id,name,chunks:[]}] }
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ
 );
@@ -66,8 +76,9 @@ CREATE TABLE post_chunks (
 );
 
 -- Chunk indexing convention:
--- chunk_index >= 0: file attachment chunks (0, 1, 2, ...)
--- chunk_index < 0: inline image chunks (-1 for first image, -2 for second, etc.)
+-- chunk_index 0 .. F-1  : file attachment chunks (F = ceil(fileSize / 2 MB))
+-- chunk_index 1000+     : inline image chunks (1000 = first image, 1001 = second, ...)
+-- Gap between F-1 and 1000 is intentional: allows up to ~2 GB attachments without conflicts
 ```
 
 ## Layout
@@ -90,7 +101,7 @@ CREATE TABLE post_chunks (
 
 | Aspect | MongoDB | Postgres |
 |--------|---------|----------|
-| **Inline Images** | Embedded as base64 in `content` field | Stored in `post_chunks` with negative indices; `content` has placeholders |
+| **Inline Images** | Embedded as base64 in `content` field | Stored in `post_chunks` at indices 1000+; `content` has placeholders |
 | **Storage Model** | Single document with all data | Separate rows for content and chunks |
 | **History Bloat Risk** | Higher: each edit replaces entire content | Lower: content row small; only chunks updated |
 | **Upload Flow** | Single request; limited by 4.5 MB body parser | Chunked uploads; no practical size limit |

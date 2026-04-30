@@ -8,6 +8,8 @@ import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, parseAtt
 import { loadInlineImagesForEdit } from "../../../../lib/useInlineImages";
 
 const CHUNK_SIZE = 1024 * 1024 * 2;
+// Inline image chunks always start at this offset to avoid conflicting with file chunks (0..N-1)
+const INLINE_BASE = 1000;
 
 type PgPost = {
     id: number;
@@ -102,19 +104,19 @@ export default function PgEditPost() {
                 fileChunkCount = Math.ceil(fileObj.size / CHUNK_SIZE);
                 fileMeta = { name: fileObj.name, chunks: Array.from({ length: fileChunkCount }, (_, i) => i) };
             } else if (isRemovingFile) {
-                // Case B: file removed — inline images start at index 0
+                // Case B: file removed — no file chunks to upload
                 fileChunkCount = 0;
                 fileMeta = null;
             } else {
-                // Case C: keep existing file — inline images follow existing file chunks
-                fileChunkCount = existingMeta.file?.chunks.length ?? 0;
+                // Case C: keep existing file — don't touch file chunks in DB
+                fileChunkCount = 0;
                 fileMeta = existingMeta.file ?? null;
             }
 
             inlineImageMeta = extractedImages.map((img, i) => ({
                 id: img.id,
                 name: img.name,
-                chunks: [fileChunkCount + i],
+                chunks: [INLINE_BASE + i],
             }));
 
             const newAttachmentName = buildAttachmentMetadata(fileMeta, inlineImageMeta);

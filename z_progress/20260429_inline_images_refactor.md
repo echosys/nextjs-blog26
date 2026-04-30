@@ -65,8 +65,45 @@ The `attachment_name` column stores metadata JSON:
 ```
 
 
-## Summary
-Completed comprehensive refactoring of inline image handling for Postgres blog and fixed content display issues for both routes.
+## Session 4 — Bug Fixes (MongoDB errors, compression, chunk index conflict)
+
+### Problem 1: MongoDB pages showed no error on save failure
+- When `handleSubmit` caught an error, it set `setIsSubmitting(false)` which hid the overlay containing the error message
+- User saw the spinner briefly disappear with no explanation (especially with 2 inline images + attachment exceeding Vercel's 4.5 MB body limit)
+- **Fix**: Added `submitError` state to `mongo/new/page.tsx` and `mongo/edit/[id]/page.tsx`. Error is displayed below the submit button and persists until next submit attempt.
+
+### Problem 2: ContentEditor compressed images that were already under 3 MB
+- `compressImageToDataUrl` always ran the full canvas encode pipeline before checking size
+- Even a 200 KB image got re-encoded as JPEG at 0.92 quality, potentially changing format/quality
+- **Fix**: Check `blob.size <= maxBytes` first. If within limit, use `FileReader.readAsDataURL(blob)` to return the original data URL without any canvas processing. Only enter canvas path when blob actually exceeds the limit.
+
+### Problem 3: Large PG file attachment downloaded smaller than uploaded (7 MB → 2.1 MB)
+- Root cause: `pg/new/page.tsx` (between sessions) passed `fileObj.name` (string) to `buildAttachmentMetadata` instead of a `FileAttachmentMeta` object with a `chunks` array. The metadata stored was `{"file":"photo.zip","inline_images":[...]}` (file as string).
+- `parseAttachmentMetadata` migrates this legacy format to `chunks:[0]`, so only chunk 0 (2 MB) was fetched on download.
+- **Fix**: Changed both `pg/new/page.tsx` and `pg/edit/[id]/page.tsx` to use `INLINE_BASE = 1000` constant. Inline images always occupy chunk indices 1000, 1001, … regardless of how many file chunks exist. File chunks occupy 0..F-1. This eliminates any risk of overlap even with legacy metadata that says `chunks:[0]` for a multi-chunk file.
+- The design change also simplifies Case C (keep existing file on edit): `fileMeta` is taken as-is from existing metadata; inline images are unconditionally assigned to 1000+.
+
+### Files Changed in Session 4
+
+| File | Change |
+|------|--------|
+| `src/components/ContentEditor.tsx` | `compressImageToDataUrl`: short-circuit before canvas if `blob.size <= maxBytes`; restructured as two separate code paths |
+| `src/app/mongo/new/page.tsx` | Added `submitError` state; display error below submit button |
+| `src/app/mongo/edit/[id]/page.tsx` | Added `submitError` state; display error below submit button |
+| `src/app/pg/new/page.tsx` | Added `INLINE_BASE = 1000` constant; inline images at `[INLINE_BASE + i]` |
+| `src/app/pg/edit/[id]/page.tsx` | Added `INLINE_BASE = 1000`; Case C simplified (no fileChunkCount dependency); inline images at `[INLINE_BASE + i]` |
+| `docs/features_postgres_blog.md` | Updated chunk indexing convention, attachment_name JSON format, inline image paste description |
+
+### Chunk Index Convention (final)
+
+| Range | Usage |
+|-------|-------|
+| `0 .. F-1` | File attachment chunks (F = ⌈fileSize / 2 MB⌉) |
+| `1000+` | Inline image chunks (1000 = first image, 1001 = second, …) |
+
+Gap between F-1 and 1000 accommodates files up to ~2 GB without any conflict.
+
+
 
 ## Changes Made
 

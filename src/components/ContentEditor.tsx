@@ -37,13 +37,25 @@ type ContentEditorProps = {
 };
 
 async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ dataUrl: string; sizeKB: number }> {
+  const maxBytes = maxMB * 1024 * 1024;
+
+  // If the raw blob is already within the size limit, return original without re-encoding
+  if (blob.size <= maxBytes) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ dataUrl: reader.result as string, sizeKB: Math.round(blob.size / 1024) });
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Blob exceeds limit — compress via canvas
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const maxBytes = maxMB * 1024 * 1024;
-      // Keep reasonable max resolution (2400px) but do NOT scale to thumbnail — thumbnail is CSS only
+      // Cap resolution at 2400px (thumbnail sizing is CSS-only)
       let w = img.naturalWidth;
       let h = img.naturalHeight;
       const MAX_DIM = 2400;
@@ -53,8 +65,7 @@ async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ data
         h = Math.round(h * ratio);
       }
       const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0, w, h);
 
@@ -62,37 +73,22 @@ async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ data
         return Math.round((du.length - du.indexOf(",") - 1) * 0.75);
       }
 
-      // Start at high quality; skip all compression if already within limit
-      let quality = 0.92;
-      let dataUrl = canvas.toDataURL("image/jpeg", quality);
+      // Binary search over quality: find highest quality that fits under maxBytes
+      let lo = 0.3, hi = 0.92;
+      let dataUrl = canvas.toDataURL("image/jpeg", hi);
       let bytes = estimateBytes(dataUrl);
-      if (bytes <= maxBytes) {
-        resolve({ dataUrl, sizeKB: Math.round(bytes / 1024) });
-        return;
-      }
-
-      // Binary search over quality to get as close to maxBytes as possible without exceeding it
-      let lo = 0.3;
-      let hi = quality;
       for (let iter = 0; iter < 8; iter++) {
         const mid = Math.round(((lo + hi) / 2) * 100) / 100;
         const trial = canvas.toDataURL("image/jpeg", mid);
         const trialBytes = estimateBytes(trial);
-        if (trialBytes <= maxBytes) {
-          lo = mid;
-          dataUrl = trial;
-          bytes = trialBytes;
-        } else {
-          hi = mid;
-        }
+        if (trialBytes <= maxBytes) { lo = mid; dataUrl = trial; bytes = trialBytes; }
+        else { hi = mid; }
       }
 
-      // Last resort: resize if quality reduction alone is not enough
+      // Last resort: reduce resolution if quality search alone wasn't enough
       while (bytes > maxBytes && (w > 600 || h > 600)) {
-        w = Math.round(w * 0.85);
-        h = Math.round(h * 0.85);
-        canvas.width = w;
-        canvas.height = h;
+        w = Math.round(w * 0.85); h = Math.round(h * 0.85);
+        canvas.width = w; canvas.height = h;
         ctx.drawImage(img, 0, 0, w, h);
         dataUrl = canvas.toDataURL("image/jpeg", lo);
         bytes = estimateBytes(dataUrl);
