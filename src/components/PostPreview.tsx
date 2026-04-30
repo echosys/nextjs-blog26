@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, Tag } from 'lucide-react';
 import Link from 'next/link';
+import { usePgInlineImages, extractInlineImageIds, reconstructInlineImages } from '../lib/useInlineImages';
 
 interface Post {
   id: string;
@@ -25,6 +26,21 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   
   const post = posts[currentIndex];
+  const postId = post?.id ? Number(post.id) : null;
+  
+  // Extract inline image IDs from content
+  const inlineImageIds = useMemo(() => {
+    return post?.content ? extractInlineImageIds(post.content) : [];
+  }, [post?.content]);
+  
+  // Fetch inline images from Postgres chunks
+  const inlineImages = usePgInlineImages(postId, inlineImageIds);
+  
+  // Reconstruct content with data URLs
+  const displayContent = useMemo(() => {
+    if (!post?.content) return '';
+    return reconstructInlineImages(post.content, inlineImages);
+  }, [post?.content, inlineImages]);
 
   const handlePrevious = useCallback(() => {
     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : posts.length - 1));
@@ -120,9 +136,9 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
 
             <div className="prose prose-invert max-w-none">
               <div
-                className="text-slate-300 text-base leading-relaxed break-words [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2"
+                className="text-slate-300 text-base leading-relaxed break-words whitespace-pre-wrap [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2"
                 dangerouslySetInnerHTML={{
-                  __html: post.content
+                  __html: displayContent
                     .replace(/<script[\s\S]*?<\/script>/gi, '')
                     .replace(/\s+on\w+="[^"]*"/gi, '')
                 }}

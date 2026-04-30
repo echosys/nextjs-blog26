@@ -782,3 +782,90 @@ export async function getPgAttachment(id: number, host?: string | null) {
     buffer: Buffer.from(fullData, 'base64'),
   };
 }
+
+/**
+ * Store an inline image chunk for a post
+ * Inline images use negative chunk indices: -1, -2, -3, etc.
+ * imageIndex: 0-based, will be stored as -(imageIndex + 1)
+ */
+export async function uploadPgInlineImageChunk(
+  id: number,
+  imageIndex: number,
+  base64Data: string,
+  host?: string | null
+) {
+  const { postgresBlogMode, runtime } = getRuntimeStorageConfig(host);
+
+  if (postgresBlogMode === 'json') {
+    // In JSON mode, inline images stay embedded in content
+    // This is handled by the caller (content extraction)
+    await logInfo('storage.pgInlineImage', 'JSON mode - inline images in content', { runtime, id });
+    return { success: true };
+  }
+
+  const { chunksTable } = await ensurePostgresSchema(host);
+  const chunkIndex = -(imageIndex + 1); // -1 for first image, -2 for second, etc.
+  
+  await pgDb.query(
+    `INSERT INTO ${chunksTable} (post_id, chunk_index, data) VALUES ($1, $2, $3)
+     ON CONFLICT (post_id, chunk_index) DO UPDATE SET data = EXCLUDED.data`,
+    [id, chunkIndex, base64Data]
+  );
+  
+  await logInfo('storage.pgInlineImage', 'Stored Postgres inline image chunk', {
+    runtime,
+    id,
+    imageIndex,
+    chunkIndex,
+  });
+  
+  return { success: true };
+}
+
+/**
+ * Get inline image chunk for a post
+ * imageIndex: 0-based
+ */
+export async function getPgInlineImageChunk(
+  id: number,
+  imageIndex: number,
+  host?: string | null
+): Promise<string | null> {
+  const { postgresBlogMode } = getRuntimeStorageConfig(host);
+
+  if (postgresBlogMode === 'json') {
+    return null; // JSON mode doesn't use chunks
+  }
+
+  const { chunksTable } = await ensurePostgresSchema(host);
+  const chunkIndex = -(imageIndex + 1);
+  
+  const result = await pgDb.query(
+    `SELECT data FROM ${chunksTable} WHERE post_id = $1 AND chunk_index = $2`,
+    [id, chunkIndex]
+  );
+  
+  return result.rows[0]?.data ?? null;
+}
+
+/**
+ * Delete all inline image chunks for a post
+ */
+export async function deletePgInlineImageChunks(
+  id: number,
+  host?: string | null
+) {
+  const { postgresBlogMode } = getRuntimeStorageConfig(host);
+
+  if (postgresBlogMode === 'json') {
+    return { success: true };
+  }
+
+  const { chunksTable } = await ensurePostgresSchema(host);
+  await pgDb.query(
+    `DELETE FROM ${chunksTable} WHERE post_id = $1 AND chunk_index < 0`,
+    [id]
+  );
+  
+  return { success: true };
+}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon, Download } from "lucide-react";
 import { useState, useRef } from "react";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../components/ContentEditor";
+import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata } from "../../../lib/inlineImages";
 
 const CHUNK_SIZE = 1024 * 1024 * 2;
 
@@ -29,7 +30,7 @@ export default function PgNewPost() {
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (isSubmitting) return;
-        const content = editorRef.current?.getHTML() ?? "";
+        const rawContent = editorRef.current?.getHTML() ?? "";
         if (editorRef.current?.isEmpty()) { setContentError(true); return; }
         setContentError(false);
         setIsSubmitting(true);
@@ -39,25 +40,53 @@ export default function PgNewPost() {
         const title = (formData.get("title") as string) ?? "";
         const tagsInput = (formData.get("tags") as string) ?? "";
         const tags = tagsInput ? tagsInput.split(",").map(t => t.trim()).filter(Boolean) : [];
+        
         try {
-            if (fileObj && fileObj.size > 0) {
-                setTotalMB(Number((fileObj.size / (1024 * 1024)).toFixed(1)));
-                setUploadStatus(`Preparing ${fileObj.name}...`);
-                const initRes = await fetch("/api/pg_blogs", {
+            // Step 1: Extract inline images from content
+            const { cleanContent, images: extractedImages } = extractInlineImages(rawContent);
+            const inlineImageMetadata = extractedImages.map((img, idx) => ({ id: img.id, name: img.name }));
+            
+            // Step 2: Create post with clean content (no base64 images)
+            setUploadStatus("Creating post...");
+            const attachmentMetadata = buildAttachmentMetadata(fileObj?.name ?? null, inlineImageMetadata);
+            const initRes = await fetch("/api/pg_blogs", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    title, 
+                    content: cleanContent,
+                    tags, 
+                    attachment_name: attachmentMetadata 
+                }),
+            });
+            if (!initRes.ok) {
+                const err = await initRes.json().catch(() => ({}));
+                throw new Error((err as any)?.error ?? `Server error ${initRes.status}`);
+            }
+            const { id: postId } = await initRes.json();
+            
+            // Step 3: Upload inline image chunks
+            for (let i = 0; i < extractedImages.length; i++) {
+                const img = extractedImages[i];
+                setUploadStatus(`Uploading inline image ${i + 1} of ${extractedImages.length}...`);
+                const base64 = dataUrlToBase64(img.dataUrl);
+                const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${postId}&index=${i}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ title, content, tags, attachment_name: fileObj.name }),
+                    body: JSON.stringify({ data: base64 }),
                 });
-                if (!initRes.ok) {
-                    const err = await initRes.json().catch(() => ({}));
-                    throw new Error((err as any)?.error ?? `Server error ${initRes.status}`);
-                }
-                const { id: postId } = await initRes.json();
+                if (!imgRes.ok) throw new Error(`Inline image ${i + 1} upload failed`);
+                setUploadProgress(Math.round(((i + 1) / (extractedImages.length + (fileObj?.size ? 1 : 0))) * 100));
+            }
+            
+            // Step 4: Upload file attachment chunks (if any)
+            if (fileObj && fileObj.size > 0) {
+                setTotalMB(Number((fileObj.size / (1024 * 1024)).toFixed(1)));
                 const totalChunks = Math.ceil(fileObj.size / CHUNK_SIZE);
                 for (let i = 0; i < totalChunks; i++) {
                     const start = i * CHUNK_SIZE;
                     const chunk = fileObj.slice(start, Math.min(start + CHUNK_SIZE, fileObj.size));
-                    setUploadStatus(`Uploading chunk ${i + 1} of ${totalChunks}...`);
+                    setUploadStatus(`Uploading file chunk ${i + 1} of ${totalChunks}...`);
                     const base64: string = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = () => resolve((reader.result as string).split(",")[1]);
@@ -69,23 +98,14 @@ export default function PgNewPost() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ data: base64 }),
                     });
-                    if (!chunkRes.ok) throw new Error(`Chunk ${i + 1} upload failed`);
+                    if (!chunkRes.ok) throw new Error(`File chunk ${i + 1} upload failed`);
                     setUploadedMB(Number((Math.min((i + 1) * CHUNK_SIZE, fileObj.size) / (1024 * 1024)).toFixed(1)));
-                    setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
+                    const baseProgress = Math.round((extractedImages.length / (extractedImages.length + totalChunks)) * 100);
+                    setUploadProgress(baseProgress + Math.round(((i + 1) / totalChunks) * (100 - baseProgress)));
                 }
-            } else {
-                setUploadStatus("Creating post...");
-                const res = await fetch("/api/pg_blogs", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ title, content, tags, attachment_name: null }),
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error((err as any)?.error ?? `Server error ${res.status}`);
-                }
-                setUploadProgress(100);
             }
+            
+            setUploadProgress(100);
             setUploadStatus("Done!");
             window.location.href = "/pg?success=true";
         } catch (err: any) {
