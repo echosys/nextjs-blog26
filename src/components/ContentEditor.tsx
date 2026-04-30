@@ -57,25 +57,47 @@ async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ data
       canvas.height = h;
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0, w, h);
-      let quality = 0.85;
-      let dataUrl = canvas.toDataURL("image/jpeg", quality);
-      let bytes = Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
-      // Reduce quality to fit under maxMB
-      while (bytes > maxBytes && quality > 0.3) {
-        quality = Math.round((quality - 0.1) * 10) / 10;
-        dataUrl = canvas.toDataURL("image/jpeg", quality);
-        bytes = Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
+
+      function estimateBytes(du: string) {
+        return Math.round((du.length - du.indexOf(",") - 1) * 0.75);
       }
-      // If still too big, also reduce resolution
-      while (bytes > maxBytes && (w > 400 || h > 400)) {
-        w = Math.round(w * 0.8);
-        h = Math.round(h * 0.8);
+
+      // Start at high quality; skip all compression if already within limit
+      let quality = 0.92;
+      let dataUrl = canvas.toDataURL("image/jpeg", quality);
+      let bytes = estimateBytes(dataUrl);
+      if (bytes <= maxBytes) {
+        resolve({ dataUrl, sizeKB: Math.round(bytes / 1024) });
+        return;
+      }
+
+      // Binary search over quality to get as close to maxBytes as possible without exceeding it
+      let lo = 0.3;
+      let hi = quality;
+      for (let iter = 0; iter < 8; iter++) {
+        const mid = Math.round(((lo + hi) / 2) * 100) / 100;
+        const trial = canvas.toDataURL("image/jpeg", mid);
+        const trialBytes = estimateBytes(trial);
+        if (trialBytes <= maxBytes) {
+          lo = mid;
+          dataUrl = trial;
+          bytes = trialBytes;
+        } else {
+          hi = mid;
+        }
+      }
+
+      // Last resort: resize if quality reduction alone is not enough
+      while (bytes > maxBytes && (w > 600 || h > 600)) {
+        w = Math.round(w * 0.85);
+        h = Math.round(h * 0.85);
         canvas.width = w;
         canvas.height = h;
         ctx.drawImage(img, 0, 0, w, h);
-        dataUrl = canvas.toDataURL("image/jpeg", quality);
-        bytes = Math.round((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
+        dataUrl = canvas.toDataURL("image/jpeg", lo);
+        bytes = estimateBytes(dataUrl);
       }
+
       resolve({ dataUrl, sizeKB: Math.round(bytes / 1024) });
     };
     img.onerror = reject;
@@ -113,6 +135,10 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     const [showPlaceholder, setShowPlaceholder] = useState(!initialContent);
     const [isPasting, setIsPasting] = useState(false);
 
+    // Keep latest callback in a ref so the MutationObserver never captures a stale closure
+    const onInlineImagesChangeRef = useRef(onInlineImagesChange);
+    useEffect(() => { onInlineImagesChangeRef.current = onInlineImagesChange; });
+
     // Collect inline images from current DOM
     const collectInlineImages = useCallback((): InlineImageItem[] => {
       if (!divRef.current) return [];
@@ -142,6 +168,25 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
         }
       },
     }));
+
+    // Sync sidebar when images are removed (or any DOM change in the editor)
+    useEffect(() => {
+      const div = divRef.current;
+      if (!div) return;
+      const observer = new MutationObserver(() => {
+        const imgs = Array.from(div.querySelectorAll<HTMLImageElement>("img[data-inline-id]"));
+        const images: InlineImageItem[] = imgs.map(img => ({
+          id: img.dataset.inlineId!,
+          dataUrl: img.src,
+          fileName: img.dataset.fileName ?? `image-${img.dataset.inlineId}.jpg`,
+          sizeKB: Number(img.dataset.sizeKb ?? 0),
+        }));
+        onInlineImagesChangeRef.current?.(images);
+        setShowPlaceholder(!div.innerText?.trim() && images.length === 0);
+      });
+      observer.observe(div, { childList: true, subtree: true });
+      return () => observer.disconnect();
+    }, []); // empty — div is stable after mount, callback accessed via ref
 
     useEffect(() => {
       if (divRef.current && initialContent && !hydrated.current) {

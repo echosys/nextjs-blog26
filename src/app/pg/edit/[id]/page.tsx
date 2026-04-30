@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Upload, Tags, X, CheckCircle2, Image as ImageIcon, Dow
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "../../../../components/ContentEditor";
-import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, parseAttachmentMetadata } from "../../../../lib/inlineImages";
+import { extractInlineImages, dataUrlToBase64, buildAttachmentMetadata, parseAttachmentMetadata, type InlineImageMeta, type FileAttachmentMeta } from "../../../../lib/inlineImages";
 import { loadInlineImagesForEdit } from "../../../../lib/useInlineImages";
 
 const CHUNK_SIZE = 1024 * 1024 * 2;
@@ -29,6 +29,7 @@ export default function PgEditPost() {
     const [uploadedMB, setUploadedMB] = useState(0);
     const [totalMB, setTotalMB] = useState(0);
     const [contentError, setContentError] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<ContentEditorRef>(null);
     const params = useParams();
@@ -51,7 +52,7 @@ export default function PgEditPost() {
                     data = { ...data, content: contentWithImages };
                     
                     setPost(data);
-                    setFileName(metadata.file ?? null);
+                    setFileName(metadata.file?.name ?? null);
                 }
             } catch (err) {
                 console.error("Failed to load post", err);
@@ -75,6 +76,7 @@ export default function PgEditPost() {
         const rawContent = editorRef.current?.getHTML() ?? "";
         if (editorRef.current?.isEmpty()) { setContentError(true); return; }
         setContentError(false);
+        setSubmitError(null);
         setIsSubmitting(true);
         setUploadProgress(0);
         setUploadStatus("Updating post...");
@@ -83,72 +85,80 @@ export default function PgEditPost() {
         const tagsInput = (formData.get("tags") as string) ?? "";
         const tags = tagsInput ? tagsInput.split(",").map(t => t.trim()).filter(Boolean) : [];
         const hasNewFile = Boolean(fileObj && fileObj.size > 0);
-        const isRemovingFile = !fileName && post?.attachment_name;
+        const existingMeta = parseAttachmentMetadata(post?.attachment_name ?? null);
+        const hadFile = Boolean(existingMeta.file?.name);
+        const isRemovingFile = hadFile && !fileName; // user cleared the existing file
         
         try {
-            // Step 1: Extract inline images from content
+            // Extract inline images from editor content
             const { cleanContent, images: extractedImages } = extractInlineImages(rawContent);
-            // Include explicit chunkIndex so the stored metadata permanently maps image IDs to chunk rows
-            const inlineImageMetadata = extractedImages.map(img => ({
+
+            let inlineImageMeta: InlineImageMeta[];
+            let fileMeta: FileAttachmentMeta | null;
+            let fileChunkCount: number;
+
+            if (hasNewFile && fileObj) {
+                // Case A: new file selected — reassign ALL chunk indices from scratch
+                fileChunkCount = Math.ceil(fileObj.size / CHUNK_SIZE);
+                fileMeta = { name: fileObj.name, chunks: Array.from({ length: fileChunkCount }, (_, i) => i) };
+            } else if (isRemovingFile) {
+                // Case B: file removed — inline images start at index 0
+                fileChunkCount = 0;
+                fileMeta = null;
+            } else {
+                // Case C: keep existing file — inline images follow existing file chunks
+                fileChunkCount = existingMeta.file?.chunks.length ?? 0;
+                fileMeta = existingMeta.file ?? null;
+            }
+
+            inlineImageMeta = extractedImages.map((img, i) => ({
                 id: img.id,
                 name: img.name,
-                chunkIndex: img.chunkIndex,
+                chunks: [fileChunkCount + i],
             }));
-            
-            // Determine attachment name for metadata
-            let newAttachmentName: string | null = null;
-            if (hasNewFile) {
-                newAttachmentName = buildAttachmentMetadata(fileObj!.name, inlineImageMetadata);
-            } else if (isRemovingFile) {
-                newAttachmentName = buildAttachmentMetadata(null, inlineImageMetadata);
-            } else {
-                // Keep existing file name, update inline image metadata with fresh chunk indices
-                const existingMetadata = parseAttachmentMetadata(post?.attachment_name ?? null);
-                newAttachmentName = buildAttachmentMetadata(existingMetadata.file ?? null, inlineImageMetadata);
-            }
-            
-            // Step 2: Update post with clean content
+
+            const newAttachmentName = buildAttachmentMetadata(fileMeta, inlineImageMeta);
+
+            // Update post metadata
             const updateRes = await fetch("/api/pg_blogs", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     id, title, content: cleanContent, tags,
                     attachment_name: newAttachmentName,
-                    clear_attachment: Boolean(isRemovingFile),
+                    clear_attachment: isRemovingFile,
                 }),
             });
             if (!updateRes.ok) {
                 const err = await updateRes.json().catch(() => ({}));
                 throw new Error((err as any)?.error ?? `Server error ${updateRes.status}`);
             }
-            
-            // Step 3: Upload inline image chunks using explicit chunkIndex (ON CONFLICT overwrites stale data)
-            if (extractedImages.length > 0) {
-                for (let i = 0; i < extractedImages.length; i++) {
-                    const img = extractedImages[i];
-                    setUploadStatus(`Uploading inline image ${i + 1} of ${extractedImages.length}...`);
-                    const base64 = dataUrlToBase64(img.dataUrl);
-                    const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${id}&chunkIndex=${img.chunkIndex}`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ data: base64 }),
-                    });
-                    if (!imgRes.ok) {
-                        const err = await imgRes.json().catch(() => ({}));
-                        throw new Error(`Inline image ${i + 1} upload failed: ${(err as any)?.error ?? imgRes.status}`);
-                    }
-                    setUploadProgress(Math.round(((i + 1) / (extractedImages.length + (hasNewFile ? 1 : 0))) * 100));
+
+            // Upload inline image chunks (upsert — ON CONFLICT DO UPDATE)
+            for (let i = 0; i < extractedImages.length; i++) {
+                const img = extractedImages[i];
+                const chunkIdx = inlineImageMeta[i].chunks[0];
+                setUploadStatus(`Uploading inline image ${i + 1} of ${extractedImages.length}...`);
+                const base64 = dataUrlToBase64(img.dataUrl);
+                const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${id}&chunkIndex=${chunkIdx}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ data: base64 }),
+                });
+                if (!imgRes.ok) {
+                    const err = await imgRes.json().catch(() => ({}));
+                    throw new Error(`Inline image ${i + 1} upload failed: ${(err as any)?.error ?? imgRes.status}`);
                 }
+                setUploadProgress(Math.round(((i + 1) / (extractedImages.length + fileChunkCount)) * 100));
             }
-            
-            // Step 4: Upload file attachment chunks (if new file)
-            if (hasNewFile && fileObj) {
+
+            // Upload new file chunks (Case A only, indices 0..fileChunkCount-1)
+            if (hasNewFile && fileObj && fileChunkCount > 0) {
                 setTotalMB(Number((fileObj.size / (1024 * 1024)).toFixed(1)));
-                const totalChunks = Math.ceil(fileObj.size / CHUNK_SIZE);
-                for (let i = 0; i < totalChunks; i++) {
+                for (let i = 0; i < fileChunkCount; i++) {
                     const start = i * CHUNK_SIZE;
                     const chunk = fileObj.slice(start, Math.min(start + CHUNK_SIZE, fileObj.size));
-                    setUploadStatus(`Uploading file chunk ${i + 1} of ${totalChunks}...`);
+                    setUploadStatus(`Uploading file chunk ${i + 1} of ${fileChunkCount}...`);
                     const base64: string = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = () => resolve((reader.result as string).split(",")[1]);
@@ -162,16 +172,16 @@ export default function PgEditPost() {
                     });
                     if (!chunkRes.ok) throw new Error(`File chunk ${i + 1} upload failed`);
                     setUploadedMB(Number((Math.min((i + 1) * CHUNK_SIZE, fileObj.size) / (1024 * 1024)).toFixed(1)));
-                    const baseProgress = Math.round((extractedImages.length / (extractedImages.length + totalChunks)) * 100);
-                    setUploadProgress(baseProgress + Math.round(((i + 1) / totalChunks) * (100 - baseProgress)));
+                    const baseProgress = Math.round((extractedImages.length / (extractedImages.length + fileChunkCount)) * 100);
+                    setUploadProgress(baseProgress + Math.round(((i + 1) / fileChunkCount) * (100 - baseProgress)));
                 }
-            } else {
-                setUploadProgress(100);
             }
+
+            setUploadProgress(100);
             setUploadStatus("Done!");
             window.location.href = "/pg?success=true";
         } catch (err: any) {
-            setUploadStatus("Failed: " + (err.message ?? "Please try again."));
+            setSubmitError(err.message ?? "Update failed. Please try again.");
             setIsSubmitting(false);
         }
     };
@@ -272,6 +282,11 @@ export default function PgEditPost() {
                         {isSubmitting ? <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Save size={20} />}
                         {isSubmitting ? "Saving..." : "Save Changes"}
                     </button>
+                    {submitError && (
+                        <div className="text-sm text-rose-400 bg-rose-400/10 border border-rose-400/20 rounded-xl px-4 py-3">
+                            {submitError}
+                        </div>
+                    )}
                 </aside>
                 <section className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 flex flex-col min-h-[70vh]">
                     <div className="flex items-center justify-between mb-3">

@@ -275,6 +275,13 @@ async function ensurePostgresSchema(host?: string | null) {
   await pgDb.query(`CREATE INDEX IF NOT EXISTS idx_${postgres.blogTable}_created_at ON ${postsTable} (created_at DESC)`);
   await pgDb.query(`CREATE INDEX IF NOT EXISTS idx_${postgres.blogTable}_tags ON ${postsTable} USING GIN (tags)`);
   await pgDb.query(`CREATE INDEX IF NOT EXISTS idx_${postgres.attachmentTable}_post_id ON ${chunksTable} (post_id, chunk_index)`);
+  // Idempotent: adds unique constraint on existing tables that were created without it.
+  // If existing rows have duplicates this will fail — catch and log so the app still starts.
+  try {
+    await pgDb.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_${postgres.attachmentTable}_post_chunk ON ${chunksTable} (post_id, chunk_index)`);
+  } catch (e: any) {
+    await logInfo('storage.postgres', 'Could not add unique constraint on post_chunks — clean up duplicate rows if upserts fail', { error: e.message });
+  }
 
   await logInfo('storage.postgres', 'Ensured Postgres tables', {
     runtime,
@@ -682,7 +689,8 @@ export async function updatePgBlog(input: PgBlogInput, host?: string | null) {
       `UPDATE ${postsTable} SET title = $1, content = $2, tags = $3, attachment_name = $4, updated_at = NOW() WHERE id = $5`,
       [input.title, input.content, tags, input.attachment_name || null, id]
     );
-    // Only delete file attachment chunks (chunk_index >= 0); preserve inline image chunks (chunk_index < 0)
+    // In the new sequential-index design all chunks are non-negative, so this deletes all of them.
+    // Inline image chunks will be re-uploaded by the page after this call.
     await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1 AND chunk_index >= 0`, [id]);
   } else {
     await pgDb.query(
@@ -692,7 +700,8 @@ export async function updatePgBlog(input: PgBlogInput, host?: string | null) {
   }
 
   if (input.attachment_data) {
-    // Only delete/replace file attachment chunks; preserve inline image chunks
+    // Legacy single-chunk upload path (not used by new multi-chunk pages).
+    // Deletes all existing chunks and stores the data at index 0.
     await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1 AND chunk_index >= 0`, [id]);
     await pgDb.query(`INSERT INTO ${chunksTable} (post_id, chunk_index, data) VALUES ($1, $2, $3)`, [id, 0, input.attachment_data]);
   }
@@ -759,53 +768,38 @@ export async function getPgAttachment(id: number, host?: string | null) {
   if (postgresBlogMode === 'json') {
     const posts = await readJsonBlogs(host, 'postgres');
     const post = posts.find((entry) => Number(entry.id) === id);
-    if (!post || !post.attachmentName) {
-      return null;
-    }
-
+    if (!post || !post.attachmentName) return null;
     const base64Payload = (post.attachmentChunks || []).join('') || (post.attachment?.split(',')[1] || '');
-    return {
-      attachmentName: post.attachmentName,
-      buffer: Buffer.from(base64Payload, 'base64'),
-    };
+    return { attachmentName: post.attachmentName, buffer: Buffer.from(base64Payload, 'base64') };
   }
 
   const { postsTable, chunksTable } = await ensurePostgresSchema(host);
   const postResult = await pgDb.query(`SELECT attachment_name FROM ${postsTable} WHERE id = $1`, [id]);
   const post = postResult.rows[0];
-  if (!post?.attachment_name) {
-    return null;
-  }
+  if (!post?.attachment_name) return null;
 
-  // attachment_name may be plain string (legacy) or JSON { file, inline_images[] }
-  let fileName: string | null = null;
-  try {
-    const parsed = JSON.parse(post.attachment_name);
-    fileName = parsed?.file ?? null;
-  } catch {
-    fileName = post.attachment_name; // legacy plain string
-  }
+  // Parse metadata JSON to get file name and its specific chunk indices
+  const { parseAttachmentMetadata } = await import('./inlineImages');
+  const meta = parseAttachmentMetadata(post.attachment_name);
+  if (!meta.file?.name) return null;
 
-  if (!fileName) {
-    return null; // post has only inline images, no file attachment
-  }
+  // Fetch ONLY the chunks listed in meta.file.chunks, in the recorded order
+  const chunkIndices = meta.file.chunks;
+  if (!chunkIndices.length) return null;
 
-  // Only fetch file attachment chunks (chunk_index >= 0)
   const chunkResult = await pgDb.query(
-    `SELECT data FROM ${chunksTable} WHERE post_id = $1 AND chunk_index >= 0 ORDER BY chunk_index ASC`,
-    [id]
+    `SELECT chunk_index, data FROM ${chunksTable} WHERE post_id = $1 AND chunk_index = ANY($2)`,
+    [id, chunkIndices]
   );
-  const fullData = chunkResult.rows.map((row: any) => row.data).join('');
+  const dataByIndex = new Map<number, string>(chunkResult.rows.map((r: any) => [r.chunk_index, r.data]));
+  const fullData = chunkIndices.map(ci => dataByIndex.get(ci) ?? '').join('');
 
-  return {
-    attachmentName: fileName,
-    buffer: Buffer.from(fullData, 'base64'),
-  };
+  return { attachmentName: meta.file.name, buffer: Buffer.from(fullData, 'base64') };
 }
 
 /**
- * Store an inline image chunk for a post.
- * chunkIndex must be a negative integer (e.g. -1 for first image, -2 for second).
+ * Store a generic chunk (used for both file attachment and inline images).
+ * chunkIndex must be a non-negative integer matching what the caller stored in attachment_name metadata.
  */
 export async function uploadPgInlineImageChunk(
   id: number,
@@ -816,30 +810,26 @@ export async function uploadPgInlineImageChunk(
   const { postgresBlogMode, runtime } = getRuntimeStorageConfig(host);
 
   if (postgresBlogMode === 'json') {
-    // JSON mode doesn't use chunk table; inline images stay in content as base64
     await logInfo('storage.pgInlineImage', 'JSON mode — inline image stored in content', { runtime, id });
     return { success: true };
   }
 
-  if (chunkIndex >= 0) {
-    throw new Error(`Inline image chunkIndex must be negative, got ${chunkIndex}`);
+  if (chunkIndex < 0) {
+    throw new Error(`chunkIndex must be non-negative, got ${chunkIndex}`);
   }
 
   const { chunksTable } = await ensurePostgresSchema(host);
-
   await pgDb.query(
     `INSERT INTO ${chunksTable} (post_id, chunk_index, data) VALUES ($1, $2, $3)
      ON CONFLICT (post_id, chunk_index) DO UPDATE SET data = EXCLUDED.data`,
     [id, chunkIndex, base64Data]
   );
-
-  await logInfo('storage.pgInlineImage', 'Stored Postgres inline image chunk', { runtime, id, chunkIndex });
+  await logInfo('storage.pgInlineImage', 'Stored inline image chunk', { runtime, id, chunkIndex });
   return { success: true };
 }
 
 /**
- * Get inline image chunk for a post.
- * chunkIndex must be a negative integer.
+ * Get a single chunk by its exact index.
  */
 export async function getPgInlineImageChunk(
   id: number,
@@ -847,43 +837,28 @@ export async function getPgInlineImageChunk(
   host?: string | null
 ): Promise<string | null> {
   const { postgresBlogMode } = getRuntimeStorageConfig(host);
+  if (postgresBlogMode === 'json') return null;
 
-  if (postgresBlogMode === 'json') {
-    return null; // JSON mode doesn't use chunk table
-  }
-
-  if (chunkIndex >= 0) {
-    throw new Error(`Inline image chunkIndex must be negative, got ${chunkIndex}`);
+  if (chunkIndex < 0) {
+    throw new Error(`chunkIndex must be non-negative, got ${chunkIndex}`);
   }
 
   const { chunksTable } = await ensurePostgresSchema(host);
-
   const result = await pgDb.query(
     `SELECT data FROM ${chunksTable} WHERE post_id = $1 AND chunk_index = $2`,
     [id, chunkIndex]
   );
-
   return result.rows[0]?.data ?? null;
 }
 
 /**
- * Delete all inline image chunks for a post
+ * Delete ALL chunks for a post (called before re-uploading everything on edit).
  */
-export async function deletePgInlineImageChunks(
-  id: number,
-  host?: string | null
-) {
+export async function deleteAllPgChunks(id: number, host?: string | null) {
   const { postgresBlogMode } = getRuntimeStorageConfig(host);
-
-  if (postgresBlogMode === 'json') {
-    return { success: true };
-  }
+  if (postgresBlogMode === 'json') return { success: true };
 
   const { chunksTable } = await ensurePostgresSchema(host);
-  await pgDb.query(
-    `DELETE FROM ${chunksTable} WHERE post_id = $1 AND chunk_index < 0`,
-    [id]
-  );
-  
+  await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1`, [id]);
   return { success: true };
 }

@@ -26,8 +26,8 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
       content: post.content,
       tags: post.tags,
       createdAt: post.created_at,
-      attachment: meta.file ? `/api/pg_blogs/download/${post.id}` : undefined,
-      attachmentName: meta.file ?? undefined,
+      attachment: meta.file?.name ? `/api/pg_blogs/download/${post.id}` : undefined,
+      attachmentName: meta.file?.name ?? undefined,
       inlineImagesMeta: meta.inline_images ?? [],
     };
   });
@@ -80,15 +80,15 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
                   month: 'short', day: 'numeric', year: 'numeric'
                 })}
               </span>
-              {parseAttachmentMetadata(post.attachment_name).file && (
+              {parseAttachmentMetadata(post.attachment_name).file?.name && (
                 <div onClick={e => e.stopPropagation()}>
                   <a
                     href={`/api/pg_blogs/download/${post.id}`}
-                    download={parseAttachmentMetadata(post.attachment_name).file!}
+                    download={parseAttachmentMetadata(post.attachment_name).file!.name}
                     className="flex items-center gap-2 text-teal-400 bg-teal-400/10 px-3 py-1.5 rounded-full hover:bg-teal-400/20 transition-all font-medium"
                   >
                     <Download size={14} />
-                    <span className="truncate max-w-[140px]">{parseAttachmentMetadata(post.attachment_name).file}</span>
+                    <span className="truncate max-w-[140px]">{parseAttachmentMetadata(post.attachment_name).file!.name}</span>
                   </a>
                 </div>
               )}

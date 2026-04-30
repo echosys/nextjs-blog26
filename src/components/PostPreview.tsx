@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { usePgInlineImages, reconstructInlineImages } from '../lib/useInlineImages';
-import type { InlineImageMetadata } from '../lib/inlineImages';
+import type { InlineImageMeta } from '../lib/inlineImages';
 
 interface Post {
   id: string;
@@ -15,7 +15,7 @@ interface Post {
   attachment?: string;
   attachmentName?: string;
   /** Postgres only: inline image metadata for fetching chunks */
-  inlineImagesMeta?: InlineImageMetadata[];
+  inlineImagesMeta?: InlineImageMeta[];
 }
 
 interface PostPreviewProps {
