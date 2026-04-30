@@ -677,11 +677,13 @@ export async function updatePgBlog(input: PgBlogInput, host?: string | null) {
 
   const { postsTable, chunksTable } = await ensurePostgresSchema(host);
   if (input.clear_attachment) {
+    // Use the metadata the caller already built (file=null, inline_images preserved)
     await pgDb.query(
       `UPDATE ${postsTable} SET title = $1, content = $2, tags = $3, attachment_name = $4, updated_at = NOW() WHERE id = $5`,
-      [input.title, input.content, tags, null, id]
+      [input.title, input.content, tags, input.attachment_name || null, id]
     );
-    await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1`, [id]);
+    // Only delete file attachment chunks (chunk_index >= 0); preserve inline image chunks (chunk_index < 0)
+    await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1 AND chunk_index >= 0`, [id]);
   } else {
     await pgDb.query(
       `UPDATE ${postsTable} SET title = $1, content = $2, tags = $3, attachment_name = $4, updated_at = NOW() WHERE id = $5`,
@@ -690,7 +692,8 @@ export async function updatePgBlog(input: PgBlogInput, host?: string | null) {
   }
 
   if (input.attachment_data) {
-    await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1`, [id]);
+    // Only delete/replace file attachment chunks; preserve inline image chunks
+    await pgDb.query(`DELETE FROM ${chunksTable} WHERE post_id = $1 AND chunk_index >= 0`, [id]);
     await pgDb.query(`INSERT INTO ${chunksTable} (post_id, chunk_index, data) VALUES ($1, $2, $3)`, [id, 0, input.attachment_data]);
   }
 
@@ -774,77 +777,92 @@ export async function getPgAttachment(id: number, host?: string | null) {
     return null;
   }
 
-  const chunkResult = await pgDb.query(`SELECT data FROM ${chunksTable} WHERE post_id = $1 ORDER BY chunk_index ASC`, [id]);
+  // attachment_name may be plain string (legacy) or JSON { file, inline_images[] }
+  let fileName: string | null = null;
+  try {
+    const parsed = JSON.parse(post.attachment_name);
+    fileName = parsed?.file ?? null;
+  } catch {
+    fileName = post.attachment_name; // legacy plain string
+  }
+
+  if (!fileName) {
+    return null; // post has only inline images, no file attachment
+  }
+
+  // Only fetch file attachment chunks (chunk_index >= 0)
+  const chunkResult = await pgDb.query(
+    `SELECT data FROM ${chunksTable} WHERE post_id = $1 AND chunk_index >= 0 ORDER BY chunk_index ASC`,
+    [id]
+  );
   const fullData = chunkResult.rows.map((row: any) => row.data).join('');
 
   return {
-    attachmentName: post.attachment_name,
+    attachmentName: fileName,
     buffer: Buffer.from(fullData, 'base64'),
   };
 }
 
 /**
- * Store an inline image chunk for a post
- * Inline images use negative chunk indices: -1, -2, -3, etc.
- * imageIndex: 0-based, will be stored as -(imageIndex + 1)
+ * Store an inline image chunk for a post.
+ * chunkIndex must be a negative integer (e.g. -1 for first image, -2 for second).
  */
 export async function uploadPgInlineImageChunk(
   id: number,
-  imageIndex: number,
+  chunkIndex: number,
   base64Data: string,
   host?: string | null
 ) {
   const { postgresBlogMode, runtime } = getRuntimeStorageConfig(host);
 
   if (postgresBlogMode === 'json') {
-    // In JSON mode, inline images stay embedded in content
-    // This is handled by the caller (content extraction)
-    await logInfo('storage.pgInlineImage', 'JSON mode - inline images in content', { runtime, id });
+    // JSON mode doesn't use chunk table; inline images stay in content as base64
+    await logInfo('storage.pgInlineImage', 'JSON mode — inline image stored in content', { runtime, id });
     return { success: true };
   }
 
+  if (chunkIndex >= 0) {
+    throw new Error(`Inline image chunkIndex must be negative, got ${chunkIndex}`);
+  }
+
   const { chunksTable } = await ensurePostgresSchema(host);
-  const chunkIndex = -(imageIndex + 1); // -1 for first image, -2 for second, etc.
-  
+
   await pgDb.query(
     `INSERT INTO ${chunksTable} (post_id, chunk_index, data) VALUES ($1, $2, $3)
      ON CONFLICT (post_id, chunk_index) DO UPDATE SET data = EXCLUDED.data`,
     [id, chunkIndex, base64Data]
   );
-  
-  await logInfo('storage.pgInlineImage', 'Stored Postgres inline image chunk', {
-    runtime,
-    id,
-    imageIndex,
-    chunkIndex,
-  });
-  
+
+  await logInfo('storage.pgInlineImage', 'Stored Postgres inline image chunk', { runtime, id, chunkIndex });
   return { success: true };
 }
 
 /**
- * Get inline image chunk for a post
- * imageIndex: 0-based
+ * Get inline image chunk for a post.
+ * chunkIndex must be a negative integer.
  */
 export async function getPgInlineImageChunk(
   id: number,
-  imageIndex: number,
+  chunkIndex: number,
   host?: string | null
 ): Promise<string | null> {
   const { postgresBlogMode } = getRuntimeStorageConfig(host);
 
   if (postgresBlogMode === 'json') {
-    return null; // JSON mode doesn't use chunks
+    return null; // JSON mode doesn't use chunk table
+  }
+
+  if (chunkIndex >= 0) {
+    throw new Error(`Inline image chunkIndex must be negative, got ${chunkIndex}`);
   }
 
   const { chunksTable } = await ensurePostgresSchema(host);
-  const chunkIndex = -(imageIndex + 1);
-  
+
   const result = await pgDb.query(
     `SELECT data FROM ${chunksTable} WHERE post_id = $1 AND chunk_index = $2`,
     [id, chunkIndex]
   );
-  
+
   return result.rows[0]?.data ?? null;
 }
 

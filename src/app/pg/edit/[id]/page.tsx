@@ -44,13 +44,13 @@ export default function PgEditPost() {
                 if (!res.ok) { setPost(null); return; }
                 let data: PgPost = await res.json();
                 if (data) {
-                    // Load inline images from chunks into content
-                    const contentWithImages = await loadInlineImagesForEdit(id, data.content);
+                    // Parse metadata to get file name and inline image chunk references
+                    const metadata = parseAttachmentMetadata(data.attachment_name ?? null);
+                    // Restore inline images from chunks back into content for editing
+                    const contentWithImages = await loadInlineImagesForEdit(id, data.content, metadata.inline_images ?? []);
                     data = { ...data, content: contentWithImages };
                     
                     setPost(data);
-                    // Parse attachment metadata to get file name
-                    const metadata = parseAttachmentMetadata(data.attachment_name ?? null);
                     setFileName(metadata.file ?? null);
                 }
             } catch (err) {
@@ -88,7 +88,12 @@ export default function PgEditPost() {
         try {
             // Step 1: Extract inline images from content
             const { cleanContent, images: extractedImages } = extractInlineImages(rawContent);
-            const inlineImageMetadata = extractedImages.map((img, idx) => ({ id: img.id, name: img.name }));
+            // Include explicit chunkIndex so the stored metadata permanently maps image IDs to chunk rows
+            const inlineImageMetadata = extractedImages.map(img => ({
+                id: img.id,
+                name: img.name,
+                chunkIndex: img.chunkIndex,
+            }));
             
             // Determine attachment name for metadata
             let newAttachmentName: string | null = null;
@@ -97,7 +102,7 @@ export default function PgEditPost() {
             } else if (isRemovingFile) {
                 newAttachmentName = buildAttachmentMetadata(null, inlineImageMetadata);
             } else {
-                // Keep existing file name, but update inline image metadata
+                // Keep existing file name, update inline image metadata with fresh chunk indices
                 const existingMetadata = parseAttachmentMetadata(post?.attachment_name ?? null);
                 newAttachmentName = buildAttachmentMetadata(existingMetadata.file ?? null, inlineImageMetadata);
             }
@@ -117,20 +122,21 @@ export default function PgEditPost() {
                 throw new Error((err as any)?.error ?? `Server error ${updateRes.status}`);
             }
             
-            // Step 3: Delete old inline image chunks and upload new ones
+            // Step 3: Upload inline image chunks using explicit chunkIndex (ON CONFLICT overwrites stale data)
             if (extractedImages.length > 0) {
-                // Delete old chunks (in production, you'd call a DELETE endpoint)
-                // For now, new chunks will overwrite old ones
                 for (let i = 0; i < extractedImages.length; i++) {
                     const img = extractedImages[i];
                     setUploadStatus(`Uploading inline image ${i + 1} of ${extractedImages.length}...`);
                     const base64 = dataUrlToBase64(img.dataUrl);
-                    const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${id}&index=${i}`, {
+                    const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${id}&chunkIndex=${img.chunkIndex}`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ data: base64 }),
                     });
-                    if (!imgRes.ok) throw new Error(`Inline image ${i + 1} upload failed`);
+                    if (!imgRes.ok) {
+                        const err = await imgRes.json().catch(() => ({}));
+                        throw new Error(`Inline image ${i + 1} upload failed: ${(err as any)?.error ?? imgRes.status}`);
+                    }
                     setUploadProgress(Math.round(((i + 1) / (extractedImages.length + (hasNewFile ? 1 : 0))) * 100));
                 }
             }

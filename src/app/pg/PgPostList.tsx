@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Edit2, Download } from 'lucide-react';
 import PgDeleteButton from './PgDeleteButton';
 import PostPreview from "../../components/PostPreview";
+import { parseAttachmentMetadata } from "../../lib/inlineImages";
 
 interface PgPostListProps {
   posts: any[];
@@ -17,15 +18,19 @@ function stripHtml(html: string): string {
 export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
-  const posts = rawPosts.map(post => ({
-    id: post.id,
-    title: post.title,
-    content: post.content,
-    tags: post.tags,
-    createdAt: post.created_at,
-    attachment: post.attachment_name ? `/api/pg_blogs/download/${post.id}` : undefined,
-    attachmentName: post.attachment_name,
-  }));
+  const posts = rawPosts.map(post => {
+    const meta = parseAttachmentMetadata(post.attachment_name);
+    return {
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      tags: post.tags,
+      createdAt: post.created_at,
+      attachment: meta.file ? `/api/pg_blogs/download/${post.id}` : undefined,
+      attachmentName: meta.file ?? undefined,
+      inlineImagesMeta: meta.inline_images ?? [],
+    };
+  });
 
   return (
     <>
@@ -75,15 +80,15 @@ export default function PgPostList({ posts: rawPosts }: PgPostListProps) {
                   month: 'short', day: 'numeric', year: 'numeric'
                 })}
               </span>
-              {post.attachment_name && (
+              {parseAttachmentMetadata(post.attachment_name).file && (
                 <div onClick={e => e.stopPropagation()}>
                   <a
                     href={`/api/pg_blogs/download/${post.id}`}
-                    download={post.attachment_name}
+                    download={parseAttachmentMetadata(post.attachment_name).file!}
                     className="flex items-center gap-2 text-teal-400 bg-teal-400/10 px-3 py-1.5 rounded-full hover:bg-teal-400/20 transition-all font-medium"
                   >
                     <Download size={14} />
-                    <span className="truncate max-w-[140px]">{post.attachment_name}</span>
+                    <span className="truncate max-w-[140px]">{parseAttachmentMetadata(post.attachment_name).file}</span>
                   </a>
                 </div>
               )}

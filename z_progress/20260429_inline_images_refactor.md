@@ -1,4 +1,69 @@
-# 2026-04-29 — Inline Image Refactoring & Display Fixes
+# 2026-04-29 — Inline Image Refactoring & Display/Chunk Fixes
+
+## Session 1 — Initial Implementation
+See previous entries for initial inline image chunking design.
+
+## Session 2 — Bug Fixes
+
+### Problem 1: `attachment_name` read back as raw JSON string
+- `PgPostList.tsx` passed raw `post.attachment_name` (JSON string) directly as `attachmentName` to `PostPreview` and download links
+- Showed raw JSON like `{"file":null,"inline_images":[...]}` in the UI
+- **Fix**: Import `parseAttachmentMetadata` in `PgPostList.tsx` and extract `meta.file` for the download link and `meta.inline_images` for the preview
+
+### Problem 2: `getPgAttachment` fetched inline image chunks in file download
+- `SELECT ... WHERE post_id = $1 ORDER BY chunk_index ASC` included negative-index inline image chunks
+- If post has inline images, their base64 data would be prepended to the file download stream
+- **Fix**: Added `AND chunk_index >= 0` filter; also parse JSON attachment_name to return only `file` field
+
+### Problem 3: `updatePgBlog` deleted inline image chunks when clearing/replacing attachment
+- `DELETE FROM post_chunks WHERE post_id = $1` wiped ALL chunks
+- **Fix**: Changed to `AND chunk_index >= 0` for both clear and replace cases
+
+### Problem 4: `clear_attachment` hardcoded `null` for attachment_name
+- When removing a file but keeping inline images, `attachment_name` was set to `null` losing inline image metadata
+- **Fix**: Use `input.attachment_name` (which client now sets to JSON with `file:null` + preserved inline images)
+
+### Problem 5: Inline images used positional index instead of explicit chunk index
+- API used `?index=0,1,2` → storage computed `chunkIndex = -(index+1)`
+- Fragile: order must be exactly consistent between save and load
+- **Fix**: Inline image metadata now stores `chunkIndex` explicitly (e.g. `-1`, `-2`); API accepts `?chunkIndex=-1`; no implicit conversion needed
+
+### Problem 6: `PostPreview` hook signature mismatch
+- `usePgInlineImages(postId, inlineImageIds: string[])` now needs `InlineImageMetadata[]` (with chunkIndex)
+- **Fix**: Updated to `usePgInlineImages(postId, inlineImageMeta: InlineImageMetadata[])`; fetches by chunkIndex
+
+## Files Changed in Session 2
+
+| File | Change |
+|------|--------|
+| `src/lib/inlineImages.ts` | Added `chunkIndex` to `InlineImageMetadata`; added `inlineChunkIndex()` helper; updated `extractInlineImages` to compute and return `chunkIndex` per image |
+| `src/lib/useInlineImages.ts` | Rewrote `usePgInlineImages` to accept `InlineImageMetadata[]`; fetch by `chunkIndex`; updated `loadInlineImagesForEdit` signature |
+| `src/pages/api/pg_blogs/inline-images.ts` | Changed from `?index=` (0-based) to `?chunkIndex=` (negative int); added validation for negative-only |
+| `src/lib/storage.ts` | `uploadPgInlineImageChunk`/`getPgInlineImageChunk` now accept `chunkIndex` directly; `getPgAttachment` filters `chunk_index >= 0` + parses JSON name; `updatePgBlog` uses `input.attachment_name` instead of null for clear; chunk deletes filter `>= 0` |
+| `src/app/pg/PgPostList.tsx` | Parse `attachment_name` JSON; use `meta.file` for download; pass `inlineImagesMeta` to `PostPreview` |
+| `src/components/PostPreview.tsx` | Added `inlineImagesMeta` to Post interface; pass to `usePgInlineImages` |
+| `src/app/pg/new/page.tsx` | Pass `img.chunkIndex` in metadata and API call |
+| `src/app/pg/edit/[id]/page.tsx` | Pass `img.chunkIndex` in metadata and API call; fix `loadInlineImagesForEdit` call |
+| `docs/schema.sql` | Updated with UNIQUE constraint, comments, and partial indexes for chunk_index |
+
+## Chunk Index Convention (enforced in code)
+
+| Range | Usage |
+|-------|-------|
+| `chunk_index >= 0` | File attachment chunks (0, 1, 2, …) assembled in order |
+| `chunk_index < 0` | Inline image chunks (-1 = img[0], -2 = img[1], …) each a complete image |
+
+The `attachment_name` column stores metadata JSON:
+```json
+{
+  "file": "document.pdf",
+  "inline_images": [
+    {"id": "img-uuid1", "name": "photo.jpg", "chunkIndex": -1},
+    {"id": "img-uuid2", "name": "chart.jpg", "chunkIndex": -2}
+  ]
+}
+```
+
 
 ## Summary
 Completed comprehensive refactoring of inline image handling for Postgres blog and fixed content display issues for both routes.

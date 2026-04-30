@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, Tag } from 'lucide-react';
 import Link from 'next/link';
-import { usePgInlineImages, extractInlineImageIds, reconstructInlineImages } from '../lib/useInlineImages';
+import { usePgInlineImages, reconstructInlineImages } from '../lib/useInlineImages';
+import type { InlineImageMetadata } from '../lib/inlineImages';
 
 interface Post {
   id: string;
@@ -13,6 +14,8 @@ interface Post {
   createdAt: string | Date;
   attachment?: string;
   attachmentName?: string;
+  /** Postgres only: inline image metadata for fetching chunks */
+  inlineImagesMeta?: InlineImageMetadata[];
 }
 
 interface PostPreviewProps {
@@ -27,16 +30,12 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
   
   const post = posts[currentIndex];
   const postId = post?.id ? Number(post.id) : null;
+  const inlineImagesMeta = post?.inlineImagesMeta ?? [];
   
-  // Extract inline image IDs from content
-  const inlineImageIds = useMemo(() => {
-    return post?.content ? extractInlineImageIds(post.content) : [];
-  }, [post?.content]);
+  // Fetch inline images by explicit chunkIndex (Postgres only)
+  const inlineImages = usePgInlineImages(postId, inlineImagesMeta);
   
-  // Fetch inline images from Postgres chunks
-  const inlineImages = usePgInlineImages(postId, inlineImageIds);
-  
-  // Reconstruct content with data URLs
+  // Reconstruct content — replace src="" placeholders with fetched data URLs
   const displayContent = useMemo(() => {
     if (!post?.content) return '';
     return reconstructInlineImages(post.content, inlineImages);

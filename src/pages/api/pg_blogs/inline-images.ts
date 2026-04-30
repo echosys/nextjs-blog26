@@ -4,34 +4,40 @@ import { uploadPgInlineImageChunk, getPgInlineImageChunk } from '../../../lib/st
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '4mb', // Each inline image chunk is <= 4MB
+      sizeLimit: '4mb',
     },
   },
 };
 
 /**
- * POST: Upload an inline image chunk
- * GET: Download an inline image chunk
- * DELETE: Delete an inline image chunk
- * 
+ * POST: Upload an inline image chunk.
+ * GET:  Download an inline image chunk.
+ *
  * Query params:
- *   id: post ID (required)
- *   index: image index (0-based, required)
+ *   id         — post ID (required, positive integer)
+ *   chunkIndex — chunk index used in post_chunks table (required, NEGATIVE integer,
+ *                e.g. -1 for first image, -2 for second...)
+ *
+ * The caller is responsible for assigning and tracking chunkIndex values.
+ * chunkIndex is stored in the attachment_name JSON metadata on the post row.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { id, index } = req.query;
+    const { id, chunkIndex } = req.query;
     const host = req.headers.host;
 
-    if (!id || index === undefined) {
-      return res.status(400).json({ error: 'Missing id or index' });
+    if (!id || chunkIndex === undefined) {
+      return res.status(400).json({ error: 'Missing id or chunkIndex' });
     }
 
     const postId = Number(id);
-    const imageIndex = Number(index);
+    const chunkIdx = Number(chunkIndex);
 
-    if (!Number.isFinite(postId) || !Number.isFinite(imageIndex) || imageIndex < 0) {
-      return res.status(400).json({ error: 'Invalid id or index' });
+    if (!Number.isFinite(postId) || postId <= 0) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+    if (!Number.isFinite(chunkIdx) || chunkIdx >= 0) {
+      return res.status(400).json({ error: 'chunkIndex must be a negative integer (e.g. -1, -2)' });
     }
 
     if (req.method === 'POST') {
@@ -40,16 +46,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Missing image data' });
       }
 
-      await uploadPgInlineImageChunk(postId, imageIndex, data, host);
+      await uploadPgInlineImageChunk(postId, chunkIdx, data, host);
       return res.status(200).json({ success: true });
 
     } else if (req.method === 'GET') {
-      const base64Data = await getPgInlineImageChunk(postId, imageIndex, host);
+      const base64Data = await getPgInlineImageChunk(postId, chunkIdx, host);
       if (!base64Data) {
         return res.status(404).json({ error: 'Image not found' });
       }
 
-      // Return as JSON so client can construct data URL
       return res.status(200).json({ data: base64Data });
 
     } else {
@@ -57,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
   } catch (error: any) {
-    console.error('[inline-images] Error:', error?.message);
+    console.error('[inline-images] Error:', error?.message, error?.stack);
     return res.status(500).json({ error: error?.message ?? 'Internal server error' });
   }
 }

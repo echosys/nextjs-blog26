@@ -44,7 +44,12 @@ export default function PgNewPost() {
         try {
             // Step 1: Extract inline images from content
             const { cleanContent, images: extractedImages } = extractInlineImages(rawContent);
-            const inlineImageMetadata = extractedImages.map((img, idx) => ({ id: img.id, name: img.name }));
+            // Include the explicit chunkIndex in metadata so the DB reference is permanent
+            const inlineImageMetadata = extractedImages.map(img => ({
+                id: img.id,
+                name: img.name,
+                chunkIndex: img.chunkIndex,
+            }));
             
             // Step 2: Create post with clean content (no base64 images)
             setUploadStatus("Creating post...");
@@ -65,17 +70,20 @@ export default function PgNewPost() {
             }
             const { id: postId } = await initRes.json();
             
-            // Step 3: Upload inline image chunks
+            // Step 3: Upload inline image chunks using explicit chunkIndex from metadata
             for (let i = 0; i < extractedImages.length; i++) {
                 const img = extractedImages[i];
                 setUploadStatus(`Uploading inline image ${i + 1} of ${extractedImages.length}...`);
                 const base64 = dataUrlToBase64(img.dataUrl);
-                const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${postId}&index=${i}`, {
+                const imgRes = await fetch(`/api/pg_blogs/inline-images?id=${postId}&chunkIndex=${img.chunkIndex}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ data: base64 }),
                 });
-                if (!imgRes.ok) throw new Error(`Inline image ${i + 1} upload failed`);
+                if (!imgRes.ok) {
+                    const err = await imgRes.json().catch(() => ({}));
+                    throw new Error(`Inline image ${i + 1} upload failed: ${(err as any)?.error ?? imgRes.status}`);
+                }
                 setUploadProgress(Math.round(((i + 1) / (extractedImages.length + (fileObj?.size ? 1 : 0))) * 100));
             }
             
