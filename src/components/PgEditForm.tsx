@@ -491,6 +491,18 @@ const PgEditForm = forwardRef<EditFormHandle, PgEditFormProps>(function PgEditFo
                     </>
                 )}
             </form>
+            <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+                {savedFlash && (
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-teal-300 bg-slate-900/95 border border-teal-500/30 backdrop-blur px-3 py-2 rounded-full shadow-lg">
+                        <CheckCircle2 size={14} /> Saved
+                    </span>
+                )}
+                <button type="submit" form={formId} disabled={isSubmitting} title="Save changes"
+                    className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 disabled:opacity-50 text-white font-semibold px-4 py-3 rounded-full shadow-2xl shadow-teal-500/30 transition-all">
+                    {isSubmitting ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={18} />}
+                    <span className="hidden sm:inline">{isSubmitting ? "Saving..." : "Save"}</span>
+                </button>
+            </div>
             <DiscardChangesDialog
                 open={pendingAction !== null}
                 onCancel={() => setPendingAction(null)}

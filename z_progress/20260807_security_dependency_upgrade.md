@@ -257,3 +257,77 @@ existing full-page editor available as a fallback/deep-link target.
   transient view preference rather than durable UI state, consistent
   with how sort order is already only persisted via the `?sort=` URL
   query param rather than storage.
+
+---
+
+# Quick-edit layout redesign + floating Save button
+
+## What changed
+
+- **Quick-edit panel layout**: in [src/components/MongoEditForm.tsx](../src/components/MongoEditForm.tsx)
+  and [src/components/PgEditForm.tsx](../src/components/PgEditForm.tsx), the
+  `variant="panel"` layout was changed from a two-column sidebar+content
+  grid (three stacked full-height fields: Title, Tags, Attachment) to a
+  single compact card above the content: Title/Tags/Attachment now sit
+  side-by-side in one row (`grid sm:grid-cols-[1.2fr_1fr_1fr]`), with
+  Inline Images (when present) and any submit error below that row. The
+  content editor section is now a full-width block below the card
+  (`flex-1 min-h-[55vh]`) instead of being squeezed into a narrow right
+  column next to a tall sidebar. The `variant="page"` (standalone
+  full-page editor) layout is unchanged — it still uses the sidebar +
+  content grid, since it isn't sharing horizontal space with a compact
+  post list the way the quick-edit panel is.
+- **Header Save button**: added a compact "Save" button to the panel's
+  header row (next to the Prev/Next/Maximize/Close icons), wired to the
+  form via a shared `id`/`form` attribute pairing (`formId =
+  "mongo-edit-form-<id>"` / `"pg-edit-form-<idStr>"`) rather than needing
+  to be a descendant of the `<form>` element.
+- **Floating Save button**: both variants now also render a
+  `position: fixed` circular Save button pinned to the bottom-right of
+  the viewport (`fixed bottom-6 right-6 z-40`), submitting the same form
+  via the `form` attribute. It shows a spinner while submitting and a
+  "Saved" pill next to it when the panel-variant save completes. Because
+  it's viewport-fixed rather than positioned relative to any scrolling
+  container, it stays reachable no matter how far down the user has
+  scrolled into a long post's content — no more scrolling back to the
+  top (or to a sidebar that no longer exists in the panel layout) just to
+  hit Save.
+
+## Why
+
+Two related pieces of feedback: (1) the quick-edit split view (added in
+the previous change) felt cramped because Title/Tags/Attachment were
+each given their own full-width stacked row in a narrow column, when
+they could sit compactly in one row and hand the freed-up space to the
+content editor; (2) after that redesign removed the previously-sticky
+sidebar in the panel, saving a long post required scrolling all the way
+back up to reach the Save button. The user asked whether a floating
+icon to jump back to the top, or a bottom-of-content Save button, would
+help — a viewport-fixed floating Save button was chosen over both since
+it lets the user save from any scroll position without needing to
+navigate anywhere first, and it also helps the standalone full-page
+editor on narrow/mobile viewports where the sidebar isn't sticky either.
+
+## Verification
+
+- `npm run build` → compiles successfully, no type errors.
+- `npx jest` → all 5 existing tests pass.
+- Manually verified via the dev server: opened quick edit, confirmed the
+  new compact Title/Tags/Attachment row layout; pasted ~80 paragraphs of
+  text into the content editor, scrolled to the very bottom of the page,
+  confirmed the floating round Save button remained fixed in the
+  bottom-right corner, and clicking it fired a `PUT /api/blogs` request
+  (200 response) and showed both the header and floating "Saved"
+  indicators — all without scrolling back up.
+
+## Assumptions
+
+- The floating Save button is shown for both `variant="page"` and
+  `variant="panel"`, even though the standalone page's sidebar is
+  already `lg:sticky` on desktop (so the floating button is somewhat
+  redundant there above the `lg` breakpoint) — added uniformly since the
+  sidebar isn't sticky on narrower/mobile layouts and the extra always-
+  reachable Save affordance doesn't hurt on desktop.
+- Did not add a separate "scroll to top" affordance; the floating button
+  saves directly instead, which fully removes the need to scroll rather
+  than just making the scroll-back trip faster.

@@ -36,6 +36,8 @@ Default behavior in the current config:
 - Editing a post and saving returns to the list with that post's preview reopened automatically (instead of the top of the list), so it's easy to keep refining the same post.
 - The "Filter by Tags" sidebar is collapsible (chevron toggle in its header) so the post list can use the full width when tag filtering isn't needed.
 - Clicking a post tile's pencil icon opens an inline "quick edit" split view (Outlook-style) instead of navigating away: a compact list of posts on the left, the edit form on the right. Opening quick edit auto-collapses the tags sidebar (restored to its prior state on close). The panel has its own Prev/Next buttons, a button to open the same post in the full standalone editor, and a close (X) button. The full-page editor at `/mongo/edit/<id>` is still available directly or via that link, and also has Prev/Next buttons (based on the list order the user came from).
+- In the quick-edit panel, Title/Tags/Attachment are arranged in one compact row above the content area (instead of a tall sidebar), so the content editor gets the full width and most of the vertical space.
+- A floating round Save button stays fixed at the bottom-right of the screen while editing (both quick edit and the full-page editor), so long posts can be saved without scrolling back up to reach a Save button.
 - If a post has unsaved changes, navigating away from it while editing (Prev/Next, switching posts in quick edit, or closing quick edit) shows a "Discard changes?" confirmation before proceeding. Saving successfully clears the unsaved state.
 - Create, edit, delete, and attachment handling still use `/api/blogs`.
 - In JSON mode, changes persist only to `config/localBlobData_mongo.json`.
