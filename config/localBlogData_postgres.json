@@ -9,9 +9,10 @@
         "test"
       ],
       "attachment": "",
-      "attachmentName": "",
+      "attachmentName": "{\"file\":null}",
       "attachmentChunks": [],
-      "createdAt": "2026-04-06T21:20:26.428Z"
+      "createdAt": "2026-04-06T21:20:26.428Z",
+      "updatedAt": "2026-08-07T22:23:50.584Z"
     }
   ]
 }

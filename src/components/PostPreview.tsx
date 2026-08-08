@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, Tag } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, PenLine, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { usePgInlineImages, reconstructInlineImages } from '../lib/useInlineImages';
 import type { InlineImageMeta } from '../lib/inlineImages';
@@ -13,6 +13,7 @@ interface Post {
   content: string;
   tags?: string[];
   createdAt: string | Date;
+  updatedAt?: string | Date;
   attachment?: string;
   attachmentName?: string;
   /** Postgres only: inline image metadata for fetching chunks */
@@ -121,6 +122,16 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
                     year: 'numeric' 
                   })}
                 </div>
+                {post.updatedAt && (
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <PenLine size={14} className="text-teal-400" />
+                    Edited {new Date(post.updatedAt).toLocaleDateString(undefined, {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </div>
+                )}
                 {post.tags && post.tags.length > 0 && (
                   <div className="flex items-center gap-2">
                     <Tag size={14} className="text-teal-400" />

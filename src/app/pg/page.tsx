@@ -1,14 +1,23 @@
 import Link from "next/link";
-import { Plus, Tag, CheckCircle2, X, AlertTriangle } from "lucide-react";
+import { CheckCircle2, X, AlertTriangle } from "lucide-react";
 import { headers } from "next/headers";
 import PgPostList from "./PgPostList";
-import { listPgBlogs } from "../../lib/storage";
+import { type SortFieldParam, type SortOrderParam } from "../../components/SortControl";
+import { listPgBlogs, type BlogSortField, type BlogSortOrder } from "../../lib/storage";
 
 export const dynamic = 'force-dynamic';
 
-async function getPgPosts(tag?: string, host?: string | null) {
+function parseSort(sort?: string): { field: SortFieldParam; order: SortOrderParam } {
+    const [rawField, rawOrder] = (sort || "created_desc").split("_");
+    return {
+        field: rawField === "updated" ? "updated" : "created",
+        order: rawOrder === "asc" ? "asc" : "desc",
+    };
+}
+
+async function getPgPosts(tag: string | undefined, host: string | null | undefined, sortField: BlogSortField, sortOrder: BlogSortOrder) {
     try {
-        return { ...(await listPgBlogs({ tag, host })), error: null };
+        return { ...(await listPgBlogs({ tag, host, sortField, sortOrder })), error: null };
     } catch (err: any) {
         console.error('[pg/page] listPgBlogs failed:', err?.message);
         return { posts: [], tags: [], error: err?.message ?? 'Database error' };
@@ -18,13 +27,17 @@ async function getPgPosts(tag?: string, host?: string | null) {
 export default async function PgBlogPage({
     searchParams,
 }: {
-    searchParams: Promise<{ tag?: string; success?: string }>;
+    searchParams: Promise<{ tag?: string; success?: string; sort?: string; previewId?: string }>;
 }) {
-    const { tag, success } = await searchParams;
+    const { tag, success, sort, previewId } = await searchParams;
     const selectedTag = tag || 'all';
+    const { field: sortFieldParam, order: sortOrderParam } = parseSort(sort);
+    const sortField: BlogSortField = sortFieldParam === 'updated' ? 'updatedAt' : 'createdAt';
+    const sortOrder: BlogSortOrder = sortOrderParam;
     const headerStore = await headers();
-    const { posts, tags, error } = await getPgPosts(selectedTag, headerStore.get('host'));
+    const { posts, tags, error } = await getPgPosts(selectedTag, headerStore.get('host'), sortField, sortOrder);
     const showSuccess = success === 'true';
+
 
     return (
         <div className="space-y-4">
@@ -46,50 +59,15 @@ export default async function PgBlogPage({
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row gap-8">
-                {/* Sidebar */}
-                <aside className="w-full md:w-64 space-y-3">
-                    <div>
-                        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <Tag size={14} /> Filter by Tags
-                        </h3>
-                        <div className="flex flex-wrap md:flex-col gap-2">
-                            <Link
-                                href="/pg"
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedTag === 'all' ? 'bg-teal-500 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}
-                            >
-                                All Posts
-                            </Link>
-                            {tags.map((t: string) => (
-                                <Link
-                                    key={t}
-                                    href={`/pg?tag=${t}`}
-                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedTag === t ? 'bg-teal-500 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}
-                                >
-                                    #{t}
-                                </Link>
-                            ))}
-                        </div>
-                    </div>
-                </aside>
-
-                {/* Main Content */}
-                <div className="flex-1 space-y-6">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-semibold capitalize">
-                            {selectedTag === 'all' ? 'Latest Posts' : `Posts tagged #${selectedTag}`}
-                        </h2>
-                        <Link
-                            href="/pg/new"
-                            className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-teal-500/20"
-                        >
-                            <Plus size={18} /> New Post
-                        </Link>
-                    </div>
-
-                    <PgPostList posts={posts} />
-                </div>
-            </div>
+            <PgPostList
+                posts={posts}
+                previewId={previewId}
+                tags={tags}
+                selectedTag={selectedTag}
+                sortFieldParam={sortFieldParam}
+                sortOrderParam={sortOrderParam}
+            />
         </div>
     );
 }
+

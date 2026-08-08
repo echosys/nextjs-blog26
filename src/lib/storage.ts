@@ -413,8 +413,25 @@ export async function getMongoTags(host?: string | null): Promise<string[]> {
   return Array.isArray(result?.tags) ? result.tags : [];
 }
 
+export type BlogSortField = 'createdAt' | 'updatedAt';
+export type BlogSortOrder = 'asc' | 'desc';
+
+function jsonSortComparator(sortField: BlogSortField, sortOrder: BlogSortOrder) {
+  const dateOf = (post: JsonBlogRecord) => (sortField === 'updatedAt' ? post.updatedAt || post.createdAt : post.createdAt);
+  return sortOrder === 'asc'
+    ? (left: JsonBlogRecord, right: JsonBlogRecord) => dateOf(left).localeCompare(dateOf(right))
+    : (left: JsonBlogRecord, right: JsonBlogRecord) => dateOf(right).localeCompare(dateOf(left));
+}
+
 export async function listMongoBlogs(
-  params: { page?: number; limit?: number; tag?: string; host?: string | null } = {}
+  params: {
+    page?: number;
+    limit?: number;
+    tag?: string;
+    host?: string | null;
+    sortField?: BlogSortField;
+    sortOrder?: BlogSortOrder;
+  } = {}
 ) {
   const { mongoBlogMode } = getRuntimeStorageConfig(params.host);
   const page = params.page || 1;
@@ -425,13 +442,15 @@ export async function listMongoBlogs(
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
+  const sortField: BlogSortField = params.sortField === 'updatedAt' ? 'updatedAt' : 'createdAt';
+  const sortOrder: BlogSortOrder = params.sortOrder === 'asc' ? 'asc' : 'desc';
 
   if (mongoBlogMode === 'json') {
     const posts = await readJsonBlogs(params.host, 'mongo');
     const filteredPosts = tagList.length === 0
       ? posts
       : posts.filter((post) => tagList.every((tag) => post.tags.includes(tag)));
-    const sortedPosts = [...filteredPosts].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const sortedPosts = [...filteredPosts].sort(jsonSortComparator(sortField, sortOrder));
     const blogs = sortedPosts.slice(skip, skip + limit).map(mapJsonToMongoBlog);
     const total = sortedPosts.length;
 
@@ -445,8 +464,24 @@ export async function listMongoBlogs(
 
   const { blogCollection } = await getMongoCollections(params.host);
   const query = tagList.length > 0 ? { tags: { $all: tagList } } : {};
-  const blogs = await blogCollection.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray();
+  const sortDirection = sortOrder === 'asc' ? 1 : -1;
   const total = await blogCollection.countDocuments(query);
+
+  let blogs;
+  if (sortField === 'updatedAt') {
+    // Fall back to createdAt for posts that have never been edited so they still sort predictably.
+    blogs = await blogCollection
+      .aggregate([
+        { $match: query },
+        { $addFields: { sortDate: { $ifNull: ['$updatedAt', '$createdAt'] } } },
+        { $sort: { sortDate: sortDirection } },
+        { $skip: skip },
+        { $limit: limit },
+      ])
+      .toArray();
+  } else {
+    blogs = await blogCollection.find(query).sort({ createdAt: sortDirection }).skip(skip).limit(limit).toArray();
+  }
 
   return {
     blogs,
@@ -568,14 +603,18 @@ export async function deleteMongoBlog(id: string, host?: string | null) {
   return result;
 }
 
-export async function listPgBlogs(params: { tag?: string; host?: string | null } = {}) {
+export async function listPgBlogs(
+  params: { tag?: string; host?: string | null; sortField?: BlogSortField; sortOrder?: BlogSortOrder } = {}
+) {
   const { postgresBlogMode } = getRuntimeStorageConfig(params.host);
   const activeTag = params.tag && params.tag !== 'all' ? params.tag : undefined;
+  const sortField: BlogSortField = params.sortField === 'updatedAt' ? 'updatedAt' : 'createdAt';
+  const sortOrder: BlogSortOrder = params.sortOrder === 'asc' ? 'asc' : 'desc';
 
   if (postgresBlogMode === 'json') {
     const posts = await readJsonBlogs(params.host, 'postgres');
     const filtered = activeTag ? posts.filter((post) => post.tags.includes(activeTag)) : posts;
-    const sorted = [...filtered].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const sorted = [...filtered].sort(jsonSortComparator(sortField, sortOrder));
     return {
       posts: sorted.map(mapJsonToPgBlog),
       tags: collectTags(posts),
@@ -589,7 +628,10 @@ export async function listPgBlogs(params: { tag?: string; host?: string | null }
     query += ' WHERE $1 = ANY(tags)';
     paramsList.push(activeTag);
   }
-  query += ' ORDER BY created_at DESC';
+  // sortField/sortOrder are normalized above to one of two fixed literals each, never raw user input.
+  const orderColumn = sortField === 'updatedAt' ? 'COALESCE(updated_at, created_at)' : 'created_at';
+  const orderDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
+  query += ` ORDER BY ${orderColumn} ${orderDirection}`;
 
   const result = await pgDb.query(query, paramsList);
   const tagsResult = await pgDb.query(`SELECT DISTINCT unnest(tags) AS tag FROM ${postsTable} ORDER BY tag ASC`);

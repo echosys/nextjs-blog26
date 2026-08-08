@@ -34,6 +34,8 @@ type ContentEditorProps = {
   placeholder?: string;
   hasError?: boolean;
   onInlineImagesChange?: (images: InlineImageItem[]) => void;
+  /** Fired on any user edit (typing, paste, inline image removal) — useful for dirty-state tracking. */
+  onChange?: () => void;
 };
 
 async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ dataUrl: string; sizeKB: number }> {
@@ -123,6 +125,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       placeholder = "Write your blog content here...",
       hasError = false,
       onInlineImagesChange,
+      onChange,
     },
     ref
   ) => {
@@ -161,6 +164,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
         if (img) {
           img.remove();
           onInlineImagesChange?.(collectInlineImages());
+          onChange?.();
         }
       },
     }));
@@ -199,6 +203,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       const hasText = Boolean(div?.innerText?.trim());
       const hasImage = Boolean(div?.querySelector("img[data-inline-id]"));
       setShowPlaceholder(!hasText && !hasImage);
+      onChange?.();
     };
 
     const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -253,6 +258,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
           s.addRange(r);
         }
         onInlineImagesChange?.(collectInlineImages());
+        onChange?.();
       } catch {
         pending.remove();
       } finally {

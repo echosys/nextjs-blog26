@@ -1,15 +1,24 @@
 import Link from "next/link";
-import { Plus, Tag, CheckCircle2, X } from "lucide-react";
+import { CheckCircle2, X } from "lucide-react";
 import { headers } from "next/headers";
 import MongoPostList from "./MongoPostList";
-import { getMongoTags, listMongoBlogs } from "../../lib/storage";
+import { type SortFieldParam, type SortOrderParam } from "../../components/SortControl";
+import { getMongoTags, listMongoBlogs, type BlogSortField, type BlogSortOrder } from "../../lib/storage";
 
 export const dynamic = 'force-dynamic';
 
-async function getBlogs(tag?: string, host?: string | null) {
+function parseSort(sort?: string): { field: SortFieldParam; order: SortOrderParam } {
+    const [rawField, rawOrder] = (sort || "created_desc").split("_");
+    return {
+        field: rawField === "updated" ? "updated" : "created",
+        order: rawOrder === "asc" ? "asc" : "desc",
+    };
+}
+
+async function getBlogs(tag: string | undefined, host: string | null | undefined, sortField: BlogSortField, sortOrder: BlogSortOrder) {
     try {
         const [{ blogs }, allTags] = await Promise.all([
-            listMongoBlogs({ page: 1, limit: 50, tag, host }),
+            listMongoBlogs({ page: 1, limit: 50, tag, host, sortField, sortOrder }),
             getMongoTags(host),
         ]);
         return { blogs: JSON.parse(JSON.stringify(blogs)), allTags };
@@ -21,12 +30,16 @@ async function getBlogs(tag?: string, host?: string | null) {
 export default async function MongoBlogPage({
     searchParams,
 }: {
-    searchParams: Promise<{ tag?: string; success?: string }>;
+    searchParams: Promise<{ tag?: string; success?: string; sort?: string; previewId?: string }>;
 }) {
-    const { tag, success } = await searchParams;
+    const { tag, success, sort, previewId } = await searchParams;
     const selectedTag = tag || 'all';
+    const { field: sortFieldParam, order: sortOrderParam } = parseSort(sort);
+    const sortField: BlogSortField = sortFieldParam === 'updated' ? 'updatedAt' : 'createdAt';
+    const sortOrder: BlogSortOrder = sortOrderParam;
     const headerStore = await headers();
-    const { blogs, allTags } = await getBlogs(selectedTag, headerStore.get('host'));
+    const { blogs, allTags } = await getBlogs(selectedTag, headerStore.get('host'), sortField, sortOrder);
+
 
     return (
         <div className="space-y-4">
@@ -40,38 +53,15 @@ export default async function MongoBlogPage({
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row gap-8">
-                <aside className="w-full md:w-64 space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                        <Tag size={14} /> Filter by Tags
-                    </h3>
-                    <div className="flex flex-wrap md:flex-col gap-2">
-                        <Link href="/mongo" className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedTag === 'all' ? 'bg-teal-500 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
-                            All Posts
-                        </Link>
-                        {allTags.map((t) => (
-                            <Link key={t} href={`/mongo?tag=${t}`}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedTag === t ? 'bg-teal-500 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
-                                #{t}
-                            </Link>
-                        ))}
-                    </div>
-                </aside>
-
-                <div className="flex-1 space-y-6">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-semibold">
-                            {selectedTag === 'all' ? 'Latest Posts' : `Posts tagged #${selectedTag}`}
-                        </h2>
-                        <Link href="/mongo/new" className="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-teal-500/20">
-                            <Plus size={18} /> New Post
-                        </Link>
-                    </div>
-
-                    <MongoPostList blogs={blogs} />
-
-                </div>
-            </div>
+            <MongoPostList
+                blogs={blogs}
+                previewId={previewId}
+                allTags={allTags}
+                selectedTag={selectedTag}
+                sortFieldParam={sortFieldParam}
+                sortOrderParam={sortOrderParam}
+            />
         </div>
     );
 }
+

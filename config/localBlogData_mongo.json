@@ -1,8 +1,19 @@
 {
   "posts": [
     {
+      "id": "2",
+      "title": "test2",
+      "content": "testestest",
+      "tags": [
+        "test2"
+      ],
+      "attachment": "",
+      "attachmentName": "",
+      "createdAt": "2026-08-08T00:02:12.133Z"
+    },
+    {
       "id": "1",
-      "title": "Mongo Test Post",
+      "title": " Updated",
       "content": "This is a test post for Mongo",
       "tags": [
         "mongo",
@@ -10,7 +21,8 @@
       ],
       "attachment": "",
       "attachmentName": "",
-      "createdAt": "2026-04-06T21:20:22.525Z"
+      "createdAt": "2026-04-06T21:20:22.525Z",
+      "updatedAt": "2026-08-07T21:59:37.163Z"
     }
   ]
 }
