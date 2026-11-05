@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { LogIn, Database, ServerCrash } from "lucide-react";
+import { LogIn, Database, ServerCrash, Eye, EyeOff } from "lucide-react";
 
 type DbStatus = 'idle' | 'checking' | 'ok' | 'error';
 
@@ -44,6 +44,7 @@ function StatusLabel({ status, host }: { status: DbStatus; host: string }) {
 export default function LoginForm() {
     const [login, setLogin] = useState("");
     const [pw, setPw] = useState("");
+    const [showPw, setShowPw] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [mongo, setMongo] = useState<DbState>({ status: 'idle', host: '' });
@@ -161,15 +162,29 @@ export default function LoginForm() {
                     />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Password</label>
-                    <input
-                        type="password"
-                        value={pw}
-                        onChange={e => setPw(e.target.value)}
-                        placeholder="••••••••"
-                        required
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors placeholder:text-slate-600"
-                    />
+                    <label htmlFor="login-password" className="block text-sm font-medium text-slate-400 mb-1">Password</label>
+                    <div className="relative">
+                        <input
+                            id="login-password"
+                            type={showPw ? "text" : "password"}
+                            value={pw}
+                            onChange={e => setPw(e.target.value)}
+                            placeholder="••••••••"
+                            autoComplete="current-password"
+                            required
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-4 pr-12 py-3 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors placeholder:text-slate-600"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPw(v => !v)}
+                            aria-label={showPw ? "Hide password" : "Show password"}
+                            aria-pressed={showPw}
+                            title={showPw ? "Hide password" : "Show password"}
+                            className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-300 focus:outline-none focus-visible:text-teal-400 transition-colors"
+                        >
+                            {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                    </div>
                 </div>
 
                 <button
