@@ -15,45 +15,53 @@ export const config = {
   },
 };
 
+const queryString = (value: unknown) => (typeof value === 'string' ? value : undefined);
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const host = req.headers.host;
 
-  if (req.method === 'GET') {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 15;
-    const skip = (page - 1) * limit;
-    const tag = req.query.tag as string;
-    const id = req.query.id as string;
+  try {
+    if (req.method === 'GET') {
+      const page = parseInt(queryString(req.query.page) ?? '') || 1;
+      const limit = Math.min(parseInt(queryString(req.query.limit) ?? '') || 15, 100);
+      const tag = queryString(req.query.tag);
+      const id = queryString(req.query.id);
 
-    // Single post fetch by id
-    if (id) {
-      const post = await getMongoBlogById(id, host);
-      if (!post) return res.status(404).json({ error: 'Post not found' });
-      return res.status(200).json(post);
+      // Single post fetch by id
+      if (id) {
+        const post = await getMongoBlogById(id, host);
+        if (!post) return res.status(404).json({ error: 'Post not found' });
+        return res.status(200).json(post);
+      }
+
+      const { blogs, total, totalPages } = await listMongoBlogs({ page, limit, tag, host });
+      return res.status(200).json({ blogs, total, page, totalPages });
     }
 
-    const { blogs, total, totalPages } = await listMongoBlogs({ page, limit, tag, host });
+    if (req.method === 'POST') {
+      const { title, content, attachment, attachmentName, tags } = req.body;
+      const result = await createMongoBlog({ title, content, attachment, attachmentName, tags }, host);
+      return res.status(201).json(result);
+    }
 
-    res.status(200).json({ blogs, total, page, totalPages });
-  } else if (req.method === 'POST') {
-    const { title, content, attachment, attachmentName, tags } = req.body;
-    const result = await createMongoBlog({ title, content, attachment, attachmentName, tags }, host);
+    if (req.method === 'PUT') {
+      const { id, title, content, attachment, attachmentName, tags } = req.body;
+      if (typeof id !== 'string' || !id) return res.status(400).json({ error: 'ID required' });
+      const result = await updateMongoBlog(id, { title, content, attachment, attachmentName, tags }, host);
+      return res.status(200).json(result);
+    }
 
-    res.status(201).json(result);
-  } else if (req.method === 'PUT') {
-    const { id, title, content, attachment, attachmentName, tags } = req.body;
-    const result = await updateMongoBlog(id, { title, content, attachment, attachmentName, tags }, host);
+    if (req.method === 'DELETE') {
+      const id = queryString(req.query.id);
+      if (!id) return res.status(400).json({ error: 'ID required' });
+      const result = await deleteMongoBlog(id, host);
+      return res.status(200).json(result);
+    }
 
-    res.status(200).json(result);
-  } else if (req.method === 'DELETE') {
-    const { id } = req.query;
-    if (!id) return res.status(400).json({ error: 'ID required' });
-
-    const result = await deleteMongoBlog(id as string, host);
-
-    res.status(200).json(result);
-  } else {
     res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
-    res.status(405).end(`Method ${req.method} Not Allowed`);
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  } catch (error: any) {
+    console.error('Mongo API error:', error?.message);
+    return res.status(500).json({ error: error?.message ?? 'Database error' });
   }
 }

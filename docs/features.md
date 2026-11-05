@@ -26,10 +26,12 @@ Default behavior in the current config:
 - In local JSON mode, credentials come from `config/user.json`.
 - In deploy Mongo mode, credentials come from the configured Mongo login collection.
 - The login status card now shows the active storage label and mode instead of assuming MongoDB.
+- A successful login sets a signed, HttpOnly `session` cookie valid for 400 days; Logout clears it server-side via `POST /api/logout`.
 
 ### Mongo Blog Route
 
 - `/mongo` lists posts from the configured Mongo-route backend.
+- Database connection errors are surfaced as a red error banner at the top of the page, with a Retry link (an empty list therefore always means no posts, not an outage).
 - `all` tag behavior is normalized to no-filter so latest posts render consistently.
 - Posts can be sorted by Date Created or Last Edited, each with ascending/descending order, via the sort control next to "New Post". Selection is stored in the `sort` query param (e.g. `?sort=updated_desc`) so it's shareable/bookmarkable.
 - Post tiles show a compact meta row (created date, an "Edited" badge when the post has been updated, and tags) above a 2-line content preview, instead of a separate footer row, to fit more posts on screen.
@@ -40,7 +42,7 @@ Default behavior in the current config:
 - A floating round Save button stays fixed at the bottom-right of the screen while editing (both quick edit and the full-page editor), so long posts can be saved without scrolling back up to reach a Save button.
 - If a post has unsaved changes, navigating away from it while editing (Prev/Next, switching posts in quick edit, or closing quick edit) shows a "Discard changes?" confirmation before proceeding. Saving successfully clears the unsaved state.
 - Create, edit, delete, and attachment handling still use `/api/blogs`.
-- In JSON mode, changes persist only to `config/localBlobData_mongo.json`.
+- In JSON mode, changes persist only to `config/localBlogData_mongo.json`.
 - In Mongo mode, changes persist to the configured Mongo blog collection.
 - Create Post page uses the same two-column layout as Edit Post (sidebar + full-height content area).
 - Content editor is a WYSIWYG `contenteditable` div (ContentEditor component). Pasting an image:
@@ -52,7 +54,7 @@ Default behavior in the current config:
 - Full image data is stored in the HTML `content` field; the thumbnail size is only a display property.
 - Inline images appear in the sidebar "Inline Images" section with a download button (↓) and remove button (×).
 - Image-only posts are valid (the editor detects both text and `<img data-inline-id>` elements for validation).
-- Content is stored as raw HTML. List previews strip HTML tags for display. The preview modal renders HTML via `dangerouslySetInnerHTML` (script tags and `on*` event attributes sanitized before render).
+- Content is stored as raw HTML. List previews strip HTML tags for display. The preview modal and the editor sanitize stored HTML with DOMPurify before inserting it into the page.
 - One manual file attachment is supported per post (uploaded on submit as base64). File attachments are separate from inline editor images and appear only in the sidebar.
 - API body parser raised to 4.5 MB to accommodate inline image content.
 
@@ -76,6 +78,7 @@ Default behavior in the current config:
 
 - Footer backend badges are driven by runtime mode (`json`, `mongo`, `postgres`) from config resolution.
 - Local JSON mode now shows JSON for both blog backends instead of hardcoded database labels.
+- Each badge has a live dot: yellow while checking, green when connected, red with "Unreachable" (hover for the error) when the backend fails or doesn't answer within 15 s. The check runs on every page, including `/login`, so a visit also counts as database activity.
 
 ## Operational Features
 
@@ -89,8 +92,11 @@ Default behavior in the current config:
 
 ### Auth and Status
 
-- `POST /api/login`: authenticate against the active login backend
-- `GET /api/status`: report health for the active login backend
+All API routes require a valid session (`401` otherwise) except login, logout, and the two status endpoints.
+
+- `POST /api/login`: authenticate against the active login backend and set the session cookie
+- `POST /api/logout`: clear the session cookie
+- `GET /api/status`: report health for the active login backend (`?scope=blog` checks the Mongo blog backend instead)
 - `GET /api/pg_status`: report health for the active PG-route backend
 
 ### Mongo Route APIs

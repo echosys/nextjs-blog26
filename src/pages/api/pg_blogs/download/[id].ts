@@ -15,7 +15,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(404).json({ error: 'Attachment not found' });
         }
 
-        res.setHeader('Content-Disposition', `attachment; filename="${attachment.attachmentName}"`);
+        const asciiName = attachment.attachmentName.replace(/[^\x20-\x7E]|["\\]/g, '_');
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(attachment.attachmentName)}`);
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', attachment.buffer.length);
         return res.status(200).send(attachment.buffer);

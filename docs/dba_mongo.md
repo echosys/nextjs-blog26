@@ -39,7 +39,7 @@ The app uses **two collections**:
 ## 3. Create the Login User
 
 This is **required** before you can log in to the app.  
-The app queries `blog_login` with `{ login, pw }` to authenticate.
+The app looks up `blog_login` by `{ login }` and compares `pw` in the app.
 
 ```js
 use blog_2026
@@ -197,8 +197,8 @@ db.blog_login.updateOne(
     { $pull: { tags: "orphaned_tag" } }
 )
 
-// POST /api/login — authenticate
-db.blog_login.findOne({ login: "admin", pw: "your_[REDACTED_SQL_PASSWORD_2]word" })
+// POST /api/login — look up the user, then the app compares pw
+db.blog_login.findOne({ login: "admin" })
 ```
 
 ---

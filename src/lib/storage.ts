@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'fs/promises';
+import { createHash, timingSafeEqual } from 'crypto';
 import path from 'path';
-import { ObjectId } from 'mongodb';
+import { Db, ObjectId } from 'mongodb';
 import getMongoClientPromise from './mongodb';
 import { pgDb } from './pg';
 import { getRuntimeStorageConfig } from './runtimeConfig';
@@ -61,6 +62,8 @@ type PgBlogInput = {
 
 const TAG_CACHE_FILTER = { documentType: 'tag-cache' };
 
+type LoginOrMongoMode = 'json' | 'mongo';
+
 function ensureArrayTags(tags?: string[] | string): string[] {
   if (Array.isArray(tags)) {
     return tags.map((tag) => tag.trim()).filter(Boolean);
@@ -73,7 +76,8 @@ function ensureArrayTags(tags?: string[] | string): string[] {
 }
 
 function getAbsoluteConfigPath(relativePath: string) {
-  return path.join(process.cwd(), relativePath);
+  // Scoped to config/ so the bundler only traces that folder (paths in config.json are "config/...").
+  return path.join(process.cwd(), 'config', path.relative('config', relativePath));
 }
 
 async function readJsonDocument<T>(relativePath: string, fallback: T): Promise<T> {
@@ -196,6 +200,24 @@ function assertSqlIdentifier(name: string): string {
 }
 
 async function getMongoCollections(host?: string | null) {
+  const { mongo } = getRuntimeStorageConfig(host);
+  // Collection setup only needs to run once per server instance.
+  if (!mongoInitPromise) {
+    mongoInitPromise = initMongoCollections(host);
+    mongoInitPromise.catch(() => { mongoInitPromise = null; });
+  }
+  const db = await mongoInitPromise;
+
+  return {
+    db,
+    loginCollection: db.collection(mongo.loginCollection),
+    blogCollection: db.collection(mongo.blogCollection),
+  };
+}
+
+let mongoInitPromise: Promise<Db> | null = null;
+
+async function initMongoCollections(host?: string | null): Promise<Db> {
   const { mongo, runtime } = getRuntimeStorageConfig(host);
   const client = await getMongoClientPromise();
   const db = client.db(mongo.databaseName);
@@ -224,11 +246,7 @@ async function getMongoCollections(host?: string | null) {
     blogCollection: mongo.blogCollection,
   });
 
-  return {
-    db,
-    loginCollection,
-    blogCollection: db.collection(mongo.blogCollection),
-  };
+  return db;
 }
 
 async function syncMongoTagCache(host?: string | null) {
@@ -301,36 +319,39 @@ async function ensurePostgresSchema(host?: string | null) {
   return pgSchemaInitPromise;
 }
 
+function safeEqual(left: string, right: string): boolean {
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(left), digest(right));
+}
+
 export async function authenticateUser(login: string, pw: string, host?: string | null) {
   const { loginMode, runtime } = getRuntimeStorageConfig(host);
   await logInfo('storage.auth', 'Authenticating user', { runtime, loginMode, login });
 
   if (loginMode === 'json') {
     const users = await readJsonUsers(host);
-    return users.some((user) => user.login === login && user.pw === pw);
+    return users.some((user) => user.login === login && safeEqual(user.pw, pw));
   }
 
   const { loginCollection } = await getMongoCollections(host);
-  const user = await loginCollection.findOne({ login, pw });
-  return Boolean(user);
+  const user = await loginCollection.findOne({ login: String(login) });
+  return typeof user?.pw === 'string' && safeEqual(user.pw, pw);
 }
 
-export async function getLoginStatus(host?: string | null): Promise<StatusResult> {
-  const { loginMode, json } = getRuntimeStorageConfig(host);
-
-  if (loginMode === 'json') {
+async function getMongoStatus(mode: LoginOrMongoMode, jsonFile: string, host?: string | null): Promise<StatusResult> {
+  if (mode === 'json') {
     return {
       status: 'ok',
-      mode: loginMode,
+      mode,
       label: 'JSON file',
-      host: json.loginFile,
+      host: jsonFile,
     };
   }
 
   if (!process.env.MONGODB_URI) {
     return {
       status: 'error',
-      mode: loginMode,
+      mode,
       label: 'MongoDB',
       host: 'not configured',
       message: 'MONGODB_URI is not configured',
@@ -338,23 +359,34 @@ export async function getLoginStatus(host?: string | null): Promise<StatusResult
   }
 
   try {
-    await getMongoCollections(host);
+    const { db } = await getMongoCollections(host);
+    await db.command({ ping: 1 });
     return {
       status: 'ok',
-      mode: loginMode,
+      mode,
       label: 'MongoDB',
       host: parseMongoHost(process.env.MONGODB_URI),
     };
   } catch (error: any) {
-    await logError('storage.auth', 'Mongo login status failed', { message: error.message });
+    await logError('storage.mongo', 'Mongo status failed', { message: error.message });
     return {
       status: 'error',
-      mode: loginMode,
+      mode,
       label: 'MongoDB',
       host: parseMongoHost(process.env.MONGODB_URI),
       message: error.message,
     };
   }
+}
+
+export async function getLoginStatus(host?: string | null): Promise<StatusResult> {
+  const { loginMode, json } = getRuntimeStorageConfig(host);
+  return getMongoStatus(loginMode, json.loginFile, host);
+}
+
+export async function getMongoBlogStatus(host?: string | null): Promise<StatusResult> {
+  const { mongoBlogMode, json } = getRuntimeStorageConfig(host);
+  return getMongoStatus(mongoBlogMode, json.mongoBlogFile, host);
 }
 
 export async function getPostgresStatus(host?: string | null): Promise<StatusResult> {

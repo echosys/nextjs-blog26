@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 import LogoutButton from "./components/LogoutButton";
 import ActiveNavLink from "./components/ActiveNavLink";
+import DbStatusIndicator from "./components/DbStatusIndicator";
 import { cookies, headers } from "next/headers";
 import { getRuntimeStorageConfig } from "../lib/runtimeConfig";
+import { SESSION_COOKIE, verifySessionToken } from "../lib/session";
 
 
 export const metadata: Metadata = {
@@ -19,7 +21,7 @@ export default async function RootLayout({
     const cookieStore = await cookies();
     const headerStore = await headers();
     const runtime = getRuntimeStorageConfig(headerStore.get("host"));
-    const isLoggedIn = cookieStore.has("auth");
+    const isLoggedIn = await verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
 
     function parseHostFromUrl(url?: string): string {
         if (!url) {
@@ -66,18 +68,8 @@ export default async function RootLayout({
                 </div>
                 <footer className="mt-20 py-8 border-t border-slate-800 text-xs text-slate-500 flex flex-col gap-6 items-center">
                     <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-                        <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
-                            <span className="text-slate-400 font-medium">{mongoFooter.title}:</span>
-                            <span className="font-mono text-slate-500">{mongoFooter.value}</span>
-                            <span className="font-mono text-slate-600 hidden sm:inline">{mongoFooter.detail}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            <span className="text-slate-400 font-medium">{pgFooter.title}:</span>
-                            <span className="font-mono text-slate-500">{pgFooter.value}</span>
-                            <span className="font-mono text-slate-600 hidden sm:inline">{pgFooter.detail}</span>
-                        </div>
+                        <DbStatusIndicator endpoint="/api/status?scope=blog" {...mongoFooter} />
+                        <DbStatusIndicator endpoint="/api/pg_status" {...pgFooter} />
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-6 opacity-60">
                         <p>Build: <span className="font-mono text-slate-400">{process.env.NEXT_PUBLIC_BUILD_TIME || 'dev'}</span></p>

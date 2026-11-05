@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, X } from "lucide-react";
+import { CheckCircle2, X, AlertTriangle } from "lucide-react";
 import { headers } from "next/headers";
 import MongoPostList from "./MongoPostList";
 import { type SortFieldParam, type SortOrderParam } from "../../components/SortControl";
@@ -21,9 +21,10 @@ async function getBlogs(tag: string | undefined, host: string | null | undefined
             listMongoBlogs({ page: 1, limit: 50, tag, host, sortField, sortOrder }),
             getMongoTags(host),
         ]);
-        return { blogs: JSON.parse(JSON.stringify(blogs)), allTags };
-    } catch {
-        return { blogs: [], allTags: [] };
+        return { blogs: JSON.parse(JSON.stringify(blogs)), allTags, error: null };
+    } catch (err: any) {
+        console.error('[mongo/page] listMongoBlogs failed:', err?.message);
+        return { blogs: [], allTags: [], error: err?.message ?? 'Database error' };
     }
 }
 
@@ -38,11 +39,17 @@ export default async function MongoBlogPage({
     const sortField: BlogSortField = sortFieldParam === 'updated' ? 'updatedAt' : 'createdAt';
     const sortOrder: BlogSortOrder = sortOrderParam;
     const headerStore = await headers();
-    const { blogs, allTags } = await getBlogs(selectedTag, headerStore.get('host'), sortField, sortOrder);
+    const { blogs, allTags, error } = await getBlogs(selectedTag, headerStore.get('host'), sortField, sortOrder);
 
 
     return (
         <div className="space-y-4">
+            {error && (
+                <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl flex items-center gap-3 text-rose-400">
+                    <AlertTriangle size={18} className="shrink-0" />
+                    <span className="text-sm">Database error — {error}. <a href="/mongo" className="underline hover:text-rose-300">Retry</a></span>
+                </div>
+            )}
             {success === 'true' && (
                 <div className="bg-teal-500/10 border border-teal-500/20 p-4 rounded-xl flex items-center justify-between">
                     <div className="flex items-center gap-3 text-teal-400">

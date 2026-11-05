@@ -1,12 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getLoginStatus } from '../../lib/storage';
+import { getLoginStatus, getMongoBlogStatus } from '../../lib/storage';
 
 export default async function handler(
     req: NextApiRequest,
     res: NextApiResponse
 ) {
     try {
-        const status = await getLoginStatus(req.headers.host);
+        const status = req.query.scope === 'blog'
+            ? await getMongoBlogStatus(req.headers.host)
+            : await getLoginStatus(req.headers.host);
         if (status.status === 'ok') {
             return res.status(200).json(status);
         }

@@ -53,7 +53,7 @@ export default function LoginForm() {
     useEffect(() => {
         // Check MongoDB
         setMongo({ status: 'checking', host: '' });
-        fetch('/api/status')
+        fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(15000) })
             .then(async res => {
                 const d = await res.json().catch(() => ({}));
                 if (res.ok) {
@@ -66,7 +66,7 @@ export default function LoginForm() {
 
         // Check Postgres
         setPg({ status: 'checking', host: '' });
-        fetch('/api/pg_status')
+        fetch('/api/pg_status', { cache: 'no-store', signal: AbortSignal.timeout(15000) })
             .then(async res => {
                 const d = await res.json().catch(() => ({}));
                 if (res.ok) {

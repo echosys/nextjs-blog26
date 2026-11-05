@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { X, ChevronLeft, ChevronRight, Edit2, Download, Paperclip, Calendar, PenLine, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { usePgInlineImages, reconstructInlineImages } from '../lib/useInlineImages';
@@ -42,7 +43,7 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
   // Reconstruct content — replace src="" placeholders with fetched data URLs
   const displayContent = useMemo(() => {
     if (!post?.content) return '';
-    return reconstructInlineImages(post.content, inlineImages);
+    return DOMPurify.sanitize(reconstructInlineImages(post.content, inlineImages));
   }, [post?.content, inlineImages]);
 
   const handlePrevious = useCallback(() => {
@@ -150,11 +151,7 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
             <div className="prose prose-invert max-w-none">
               <div
                 className="text-slate-300 text-base leading-relaxed break-words whitespace-pre-wrap [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2"
-                dangerouslySetInnerHTML={{
-                  __html: displayContent
-                    .replace(/<script[\s\S]*?<\/script>/gi, '')
-                    .replace(/\s+on\w+="[^"]*"/gi, '')
-                }}
+                dangerouslySetInnerHTML={{ __html: displayContent }}
               />
             </div>
 

@@ -8,6 +8,7 @@
  *   - removeInlineImage(id) removes image from DOM and fires onInlineImagesChange
  */
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
+import DOMPurify from "dompurify";
 import runtimeConfig from "../../config/config.json";
 
 const MAX_IMAGE_MB: number = (runtimeConfig as any).inlineImageMaxSizeMB ?? 3;
@@ -190,7 +191,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
 
     useEffect(() => {
       if (divRef.current && initialContent && !hydrated.current) {
-        divRef.current.innerHTML = initialContent;
+        divRef.current.innerHTML = DOMPurify.sanitize(initialContent);
         setShowPlaceholder(false);
         hydrated.current = true;
         // Notify parent of any inline images already in initial content
