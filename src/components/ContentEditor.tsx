@@ -1,7 +1,7 @@
 "use client";
 /**
  * ContentEditor — contenteditable WYSIWYG editor with:
- *   - Inline image paste compressed to inlineImageMaxSizeMB
+ *   - Pasted images re-encoded to ~inlineImageTargetKB (longest side ≤ inlineImageMaxDimensionPx)
  *   - Images inserted as resizable thumbnails (max inlineThumbnailMaxPx on longest side)
  *   - Resize by dragging right/bottom edge (capped at inlineThumbnailMaxResizePx)
  *   - getInlineImages() returns { id, dataUrl, fileName, sizeKB }[] for sidebar attachment list
@@ -11,7 +11,8 @@ import { useRef, useState, useEffect, forwardRef, useImperativeHandle, useCallba
 import DOMPurify from "dompurify";
 import runtimeConfig from "../../config/config.json";
 
-const MAX_IMAGE_MB: number = (runtimeConfig as any).inlineImageMaxSizeMB ?? 3;
+const TARGET_BYTES: number = (runtimeConfig.inlineImageTargetKB ?? 250) * 1024;
+const MAX_DIM: number = runtimeConfig.inlineImageMaxDimensionPx ?? 1920;
 const THUMB_PX: number = (runtimeConfig as any).inlineThumbnailMaxPx ?? 100;
 const THUMB_MAX_PX: number = (runtimeConfig as any).inlineThumbnailMaxResizePx ?? 400;
 
@@ -39,48 +40,49 @@ type ContentEditorProps = {
   onChange?: () => void;
 };
 
-async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ dataUrl: string; sizeKB: number }> {
-  const maxBytes = maxMB * 1024 * 1024;
-
-  // If the raw blob is already within the size limit, return original without re-encoding
+async function compressImageToDataUrl(blob: Blob, maxBytes: number, maxDim: number): Promise<{ dataUrl: string; sizeKB: number; reencoded: boolean }> {
+  // Already small: keep the original bytes (and format, e.g. PNG transparency).
   if (blob.size <= maxBytes) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve({ dataUrl: reader.result as string, sizeKB: Math.round(blob.size / 1024) });
+      reader.onload = () => resolve({ dataUrl: reader.result as string, sizeKB: Math.round(blob.size / 1024), reencoded: false });
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
   }
 
-  // Blob exceeds limit — compress via canvas
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      // Cap resolution at 2400px (thumbnail sizing is CSS-only)
       let w = img.naturalWidth;
       let h = img.naturalHeight;
-      const MAX_DIM = 2400;
-      if (w > MAX_DIM || h > MAX_DIM) {
-        const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
+      if (w > maxDim || h > maxDim) {
+        const ratio = Math.min(maxDim / w, maxDim / h);
         w = Math.round(w * ratio);
         h = Math.round(h * ratio);
       }
       const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, w, h);
+      const draw = () => {
+        canvas.width = w; canvas.height = h;
+        // JPEG has no alpha; without a fill, transparent areas turn black.
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+      };
+      draw();
 
       function estimateBytes(du: string) {
         return Math.round((du.length - du.indexOf(",") - 1) * 0.75);
       }
 
       // Binary search over quality: find highest quality that fits under maxBytes
-      let lo = 0.3, hi = 0.92;
-      let dataUrl = canvas.toDataURL("image/jpeg", hi);
+      let lo = 0.4, hi = 0.9;
+      let dataUrl = canvas.toDataURL("image/jpeg", lo);
       let bytes = estimateBytes(dataUrl);
-      for (let iter = 0; iter < 8; iter++) {
+      for (let iter = 0; iter < 7 && bytes <= maxBytes; iter++) {
         const mid = Math.round(((lo + hi) / 2) * 100) / 100;
         const trial = canvas.toDataURL("image/jpeg", mid);
         const trialBytes = estimateBytes(trial);
@@ -88,18 +90,17 @@ async function compressImageToDataUrl(blob: Blob, maxMB: number): Promise<{ data
         else { hi = mid; }
       }
 
-      // Last resort: reduce resolution if quality search alone wasn't enough
-      while (bytes > maxBytes && (w > 600 || h > 600)) {
+      // Still too big at the lowest quality: shrink dimensions until it fits.
+      while (bytes > maxBytes && Math.max(w, h) > 320) {
         w = Math.round(w * 0.85); h = Math.round(h * 0.85);
-        canvas.width = w; canvas.height = h;
-        ctx.drawImage(img, 0, 0, w, h);
+        draw();
         dataUrl = canvas.toDataURL("image/jpeg", lo);
         bytes = estimateBytes(dataUrl);
       }
 
-      resolve({ dataUrl, sizeKB: Math.round(bytes / 1024) });
+      resolve({ dataUrl, sizeKB: Math.round(bytes / 1024), reencoded: true });
     };
-    img.onerror = reject;
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Unsupported image")); };
     img.src = url;
   });
 }
@@ -245,9 +246,10 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
         const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         // Preserve original filename if the clipboard item has one (works for copied files, not screenshots)
         const originalName = (blob as File).name && !(blob as File).name.startsWith("image.") ? (blob as File).name : null;
-        const { dataUrl, sizeKB } = await compressImageToDataUrl(blob, MAX_IMAGE_MB);
+        const { dataUrl, sizeKB, reencoded } = await compressImageToDataUrl(blob, TARGET_BYTES, MAX_DIM);
         const img = makeImgElement(dataUrl, id, THUMB_PX);
-        img.dataset.fileName = originalName ?? `pasted-${id}.jpg`;
+        const extension = reencoded ? "jpg" : (blob.type.split("/")[1] || "png");
+        img.dataset.fileName = originalName ?? `pasted-${id}.${extension}`;
         img.dataset.sizeKb = String(sizeKB);
         pending.replaceWith(img);
         const s = window.getSelection();

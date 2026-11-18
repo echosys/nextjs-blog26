@@ -7,6 +7,7 @@ import {
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import ContentEditor, { type ContentEditorRef, type InlineImageItem } from "./ContentEditor";
 import DiscardChangesDialog from "./DiscardChangesDialog";
+import { checkRequestSize } from "../lib/requestSize";
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -150,10 +151,13 @@ const MongoEditForm = forwardRef<EditFormHandle, MongoEditFormProps>(function Mo
         setUploadStatus("Saving...");
         setUploadProgress(75);
         try {
+            const body = JSON.stringify({ id, title, content, tags, attachment, attachmentName });
+            const sizeError = checkRequestSize(body, attachment);
+            if (sizeError) throw new Error(sizeError);
             const res = await fetch("/api/blogs", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, title, content, tags, attachment, attachmentName }),
+                body,
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
@@ -168,7 +172,7 @@ const MongoEditForm = forwardRef<EditFormHandle, MongoEditFormProps>(function Mo
                 setTimeout(() => setSavedFlash(false), 2000);
                 onSaved?.(id);
             } else {
-                window.location.href = `/mongo?success=true&previewId=${id}`;
+                window.location.href = `/blog/mongo?success=true&previewId=${id}`;
             }
         } catch (err: any) {
             setSubmitError(err.message ?? "Save failed. Please try again.");
@@ -184,7 +188,7 @@ const MongoEditForm = forwardRef<EditFormHandle, MongoEditFormProps>(function Mo
     if (!post) return (
         <div className="text-center py-20">
             <h2 className="text-2xl font-bold text-white mb-4">Post not found</h2>
-            <Link href="/mongo" className="text-teal-400 hover:underline">Back to Blog</Link>
+            <Link href="/blog/mongo" className="text-teal-400 hover:underline">Back to Blog</Link>
         </div>
     );
 
@@ -250,7 +254,7 @@ const MongoEditForm = forwardRef<EditFormHandle, MongoEditFormProps>(function Mo
                     )}
                     {isPanel && (
                         <>
-                            <Link href={`/mongo/edit/${id}`} title="Open full editor"
+                            <Link href={`/blog/mongo/edit/${id}`} title="Open full editor"
                                 className="p-2 text-slate-400 hover:text-teal-400 hover:bg-teal-400/10 rounded-lg transition-all">
                                 <Maximize2 size={16} />
                             </Link>

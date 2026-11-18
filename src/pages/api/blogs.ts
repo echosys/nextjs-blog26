@@ -29,7 +29,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Single post fetch by id
       if (id) {
-        const post = await getMongoBlogById(id, host);
+        const withAttachment = queryString(req.query.attachment) !== '0';
+        const post = await getMongoBlogById(id, host, { withAttachment });
         if (!post) return res.status(404).json({ error: 'Post not found' });
         return res.status(200).json(post);
       }

@@ -5,6 +5,14 @@ module.exports = {
   },
   pageExtensions: ["tsx", "ts"],
   poweredByHeader: false,
+  async redirects() {
+    return [
+      { source: "/blog", destination: "/blog/mongo", permanent: false },
+      // Pre-hub URLs; keep old bookmarks working.
+      { source: "/mongo/:path*", destination: "/blog/mongo/:path*", permanent: false },
+      { source: "/pg/:path*", destination: "/blog/pg/:path*", permanent: false },
+    ];
+  },
 };
 
 function gitCommit() {

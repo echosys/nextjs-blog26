@@ -11,7 +11,8 @@ import { formatBytes } from '../lib/inlineImages';
 interface Post {
   id: string;
   title: string;
-  content: string;
+  /** Omitted when the list only carries an excerpt; fetched through `loadContent`. */
+  content?: string;
   tags?: string[];
   createdAt: string | Date;
   updatedAt?: string | Date;
@@ -28,23 +29,36 @@ interface PostPreviewProps {
   initialIndex: number;
   onClose: () => void;
   editPathPrefix: string;
+  loadContent?: (id: string) => Promise<string>;
 }
 
-export default function PostPreview({ posts, initialIndex, onClose, editPathPrefix }: PostPreviewProps) {
+export default function PostPreview({ posts, initialIndex, onClose, editPathPrefix, loadContent }: PostPreviewProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [loadedContent, setLoadedContent] = useState<Record<string, string | null>>({});
   
   const post = posts[currentIndex];
   const postId = post?.id ? Number(post.id) : null;
   const inlineImagesMeta = post?.inlineImagesMeta ?? [];
+  const content = post?.content ?? loadedContent[post?.id ?? ''];
+  const contentPending = post?.content === undefined && loadContent !== undefined && !(post?.id in loadedContent);
+
+  useEffect(() => {
+    if (!post || !contentPending || !loadContent) return;
+    let cancelled = false;
+    loadContent(post.id)
+      .then((value) => { if (!cancelled) setLoadedContent(prev => ({ ...prev, [post.id]: value })); })
+      .catch(() => { if (!cancelled) setLoadedContent(prev => ({ ...prev, [post.id]: null })); });
+    return () => { cancelled = true; };
+  }, [post, contentPending, loadContent]);
   
   // Fetch inline images by explicit chunkIndex (Postgres only)
   const inlineImages = usePgInlineImages(postId, inlineImagesMeta);
   
   // Reconstruct content — replace src="" placeholders with fetched data URLs
   const displayContent = useMemo(() => {
-    if (!post?.content) return '';
-    return DOMPurify.sanitize(reconstructInlineImages(post.content, inlineImages));
-  }, [post?.content, inlineImages]);
+    if (!content) return '';
+    return DOMPurify.sanitize(reconstructInlineImages(content, inlineImages));
+  }, [content, inlineImages]);
 
   const handlePrevious = useCallback(() => {
     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : posts.length - 1));
@@ -62,12 +76,12 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    // Prevent body scroll
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = previousOverflow;
     };
   }, [onClose, handlePrevious, handleNext]);
 
@@ -149,10 +163,16 @@ export default function PostPreview({ posts, initialIndex, onClose, editPathPref
             </div>
 
             <div className="prose prose-invert max-w-none">
+              {contentPending ? (
+                <p className="text-slate-500 text-sm animate-pulse">Loading post...</p>
+              ) : content === null ? (
+                <p className="text-rose-400 text-sm">Couldn&apos;t load this post. Check the database status in the footer.</p>
+              ) : (
               <div
                 className="text-slate-300 text-base leading-relaxed break-words whitespace-pre-wrap [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2"
                 dangerouslySetInnerHTML={{ __html: displayContent }}
               />
+              )}
             </div>
 
             {post.attachment && (

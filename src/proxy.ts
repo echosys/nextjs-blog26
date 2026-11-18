@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { SESSION_COOKIE, verifySessionToken } from './lib/session';
+import { safeNextPath } from './lib/nextPath';
 
-const PUBLIC_API_ROUTES = new Set(['/api/login', '/api/logout', '/api/status', '/api/pg_status']);
+const PUBLIC_API_ROUTES = new Set(['/api/login', '/api/logout', '/api/status', '/api/pg_status', '/api/keepalive']);
 
 export async function proxy(request: NextRequest) {
-    const { pathname } = request.nextUrl;
+    const { pathname, search } = request.nextUrl;
     const isLoggedIn = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
     if (pathname.startsWith('/api')) {
@@ -16,11 +17,15 @@ export async function proxy(request: NextRequest) {
     const isLoginPage = pathname === '/login';
 
     if (!isLoggedIn && !isLoginPage) {
-        return NextResponse.redirect(new URL('/login', request.url));
+        // Remember where each tab was headed so login returns it to the same app.
+        const loginUrl = new URL('/login', request.url);
+        if (pathname !== '/') loginUrl.searchParams.set('next', pathname + search);
+        return NextResponse.redirect(loginUrl);
     }
 
     if (isLoggedIn && isLoginPage) {
-        return NextResponse.redirect(new URL('/mongo', request.url));
+        const next = safeNextPath(request.nextUrl.searchParams.get('next')) ?? '/';
+        return NextResponse.redirect(new URL(next, request.url));
     }
 
     return NextResponse.next();

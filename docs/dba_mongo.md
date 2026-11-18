@@ -2,7 +2,7 @@
 
 Database: MongoDB Atlas (or local MongoDB)  
 Database name: `blog_2026`  
-Used by: login/auth, `/mongo` blog section, all `/api/blogs*` and `/api/login` routes
+Used by: login/auth, `/blog/mongo` blog section, all `/api/blogs*` and `/api/login` routes
 
 ---
 

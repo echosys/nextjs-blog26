@@ -1,18 +1,24 @@
 {
     "runtimeNotes": "local applies to localhost and non-production development flows; deploy applies to hosted environments.",
-    "inlineImageMaxSizeMB": 3,
+    "inlineImageTargetKB": 250,
+    "inlineImageMaxDimensionPx": 1920,
     "inlineThumbnailMaxPx": 100,
     "inlineThumbnailMaxResizePx": 400,
+    "keepAlive": {
+        "enabled": true
+    },
     "local": {
         "loginMode": "json",
         "mongoBlogMode": "json",
-        "postgresBlogMode": "json"
+        "postgresBlogMode": "json",
+        "trackerMode": "json"
     },
     "deploy": {
         "target": "vercel",
         "loginMode": "mongo",
         "mongoBlogMode": "mongo",
-        "postgresBlogMode": "postgres"
+        "postgresBlogMode": "postgres",
+        "trackerMode": "mongo"
     },
     "mongo": {
         "databaseName": "blog_2026",
@@ -23,9 +29,24 @@
         "blogTable": "posts",
         "attachmentTable": "post_chunks"
     },
+    "tracker": {
+        "entriesCollection": "tracker_entries",
+        "categoriesCollection": "tracker_categories",
+        "todosCollection": "tracker_todos",
+        "regularTodoWindowDays": 3,
+        "activeTodoLimit": 15,
+        "defaultCategories": [
+            { "key": "workout", "name": "Workout", "type": "boolean" },
+            { "key": "steps", "name": "Steps", "type": "amount", "unit": "steps", "goal": 10000 },
+            { "key": "reading", "name": "Reading", "type": "amount", "unit": "min", "goal": 30 },
+            { "key": "meditation", "name": "Meditation", "type": "boolean" }
+        ]
+    },
     "json": {
         "loginFile": "config/user.json",
         "mongoBlogFile": "config/localBlogData_mongo.json",
-        "postgresBlogFile": "config/localBlogData_postgres.json"
+        "postgresBlogFile": "config/localBlogData_postgres.json",
+        "trackerFile": "config/localTrackerData.json",
+        "mockSchemaFile": "config/mockSchema.json"
     }
 }

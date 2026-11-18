@@ -1,7 +1,7 @@
 # Postgres Database Setup — `dba_postgres.md`
 
 Database: PostgreSQL (Neon / Supabase / self-hosted)  
-Used by: `/pg` blog section, all `/api/pg_blogs*` routes
+Used by: `/blog/pg` blog section, all `/api/pg_blogs*` routes
 
 ---
 

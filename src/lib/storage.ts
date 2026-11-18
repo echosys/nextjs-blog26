@@ -80,7 +80,7 @@ function getAbsoluteConfigPath(relativePath: string) {
   return path.join(process.cwd(), 'config', path.relative('config', relativePath));
 }
 
-async function readJsonDocument<T>(relativePath: string, fallback: T): Promise<T> {
+export async function readJsonDocument<T>(relativePath: string, fallback: T): Promise<T> {
   try {
     const contents = await readFile(getAbsoluteConfigPath(relativePath), 'utf8');
     return JSON.parse(contents) as T;
@@ -92,7 +92,7 @@ async function readJsonDocument<T>(relativePath: string, fallback: T): Promise<T
   }
 }
 
-async function writeJsonDocument(relativePath: string, value: unknown) {
+export async function writeJsonDocument(relativePath: string, value: unknown) {
   await writeFile(getAbsoluteConfigPath(relativePath), `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
@@ -483,7 +483,10 @@ export async function listMongoBlogs(
       ? posts
       : posts.filter((post) => tagList.every((tag) => post.tags.includes(tag)));
     const sortedPosts = [...filteredPosts].sort(jsonSortComparator(sortField, sortOrder));
-    const blogs = sortedPosts.slice(skip, skip + limit).map(mapJsonToMongoBlog);
+    const blogs = sortedPosts.slice(skip, skip + limit).map((post) => {
+      const { attachment, ...rest } = mapJsonToMongoBlog(post);
+      return { ...rest, attachmentLength: attachment.length };
+    });
     const total = sortedPosts.length;
 
     return {
@@ -498,6 +501,16 @@ export async function listMongoBlogs(
   const query = tagList.length > 0 ? { tags: { $all: tagList } } : {};
   const sortDirection = sortOrder === 'asc' ? 1 : -1;
   const total = await blogCollection.countDocuments(query);
+  // Attachments are data URLs of up to several MB; lists only need their size.
+  const listProjection = {
+    title: 1,
+    content: 1,
+    tags: 1,
+    createdAt: 1,
+    updatedAt: 1,
+    attachmentName: 1,
+    attachmentLength: { $strLenCP: { $ifNull: ['$attachment', ''] } },
+  };
 
   let blogs;
   if (sortField === 'updatedAt') {
@@ -509,10 +522,16 @@ export async function listMongoBlogs(
         { $sort: { sortDate: sortDirection } },
         { $skip: skip },
         { $limit: limit },
+        { $project: listProjection },
       ])
       .toArray();
   } else {
-    blogs = await blogCollection.find(query).sort({ createdAt: sortDirection }).skip(skip).limit(limit).toArray();
+    blogs = await blogCollection
+      .find(query, { projection: listProjection })
+      .sort({ createdAt: sortDirection })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
   }
 
   return {
@@ -523,18 +542,21 @@ export async function listMongoBlogs(
   };
 }
 
-export async function getMongoBlogById(id: string, host?: string | null) {
+export async function getMongoBlogById(id: string, host?: string | null, options: { withAttachment?: boolean } = {}) {
   const { mongoBlogMode } = getRuntimeStorageConfig(host);
+  const withAttachment = options.withAttachment ?? true;
 
   if (mongoBlogMode === 'json') {
     const posts = await readJsonBlogs(host, 'mongo');
     const post = posts.find((entry) => entry.id === id);
-    return post ? mapJsonToMongoBlog(post) : null;
+    if (!post) return null;
+    const mapped = mapJsonToMongoBlog(post);
+    return withAttachment ? mapped : { ...mapped, attachment: undefined };
   }
 
   const { blogCollection } = await getMongoCollections(host);
   const query: any = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { _id: id };
-  return blogCollection.findOne(query);
+  return blogCollection.findOne(query, withAttachment ? {} : { projection: { attachment: 0 } });
 }
 
 export async function createMongoBlog(input: MongoBlogInput, host?: string | null) {

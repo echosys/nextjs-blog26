@@ -41,7 +41,7 @@ function StatusLabel({ status, host }: { status: DbStatus; host: string }) {
     return <span className="text-xs text-slate-500">—</span>;
 }
 
-export default function LoginForm() {
+export default function LoginForm({ next }: { next: string | null }) {
     const [login, setLogin] = useState("");
     const [pw, setPw] = useState("");
     const [showPw, setShowPw] = useState(false);
@@ -52,6 +52,9 @@ export default function LoginForm() {
     const router = useRouter();
 
     useEffect(() => {
+        // Fire-and-forget DB read so visiting the login page keeps free-tier databases awake.
+        fetch('/api/keepalive', { cache: 'no-store' }).catch(() => undefined);
+
         // Check MongoDB
         setMongo({ status: 'checking', host: '' });
         fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(15000) })
@@ -92,10 +95,10 @@ export default function LoginForm() {
             });
 
             if (res.ok) {
-                router.push("/mongo");
+                router.push(next ?? "/");
                 router.refresh();
             } else {
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
                 setError(data.error || 'Invalid credentials');
             }
         } catch {

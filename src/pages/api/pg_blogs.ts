@@ -18,16 +18,22 @@ export const config = {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     try {
         const host = req.headers.host;
+        const parseId = (value: unknown) => {
+            const parsed = Number(value);
+            return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+        };
 
         if (req.method === 'GET') {
-            const { tag, id } = req.query;
+            const { tag } = req.query;
 
-            if (id) {
-                const post = await getPgBlogById(Number(id), host);
+            if (req.query.id !== undefined) {
+                const id = parseId(req.query.id);
+                if (!id) return res.status(400).json({ error: 'Invalid id' });
+                const post = await getPgBlogById(id, host);
                 return res.status(200).json(post || null);
             }
 
-            const result = await listPgBlogs({ tag: tag as string | undefined, host });
+            const result = await listPgBlogs({ tag: typeof tag === 'string' ? tag : undefined, host });
             return res.status(200).json(result);
 
         } else if (req.method === 'POST') {
@@ -37,12 +43,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         } else if (req.method === 'PUT') {
             const { id, title, content, tags, attachment_name, attachment_data, clear_attachment } = req.body;
+            if (!parseId(id)) return res.status(400).json({ error: 'Invalid id' });
             const result = await updatePgBlog({ id, title, content, tags, attachment_name, attachment_data, clear_attachment }, host);
             return res.status(200).json(result);
 
         } else if (req.method === 'DELETE') {
-            const { id } = req.query;
-            const result = await deletePgBlog(Number(id), host);
+            const id = parseId(req.query.id);
+            if (!id) return res.status(400).json({ error: 'Invalid id' });
+            const result = await deletePgBlog(id, host);
             return res.status(200).json(result);
 
         } else {

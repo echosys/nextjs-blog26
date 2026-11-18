@@ -30,14 +30,14 @@ Default behavior in the current config:
 
 ### Mongo Blog Route
 
-- `/mongo` lists posts from the configured Mongo-route backend.
+- `/blog/mongo` lists posts from the configured Mongo-route backend.
 - Database connection errors are surfaced as a red error banner at the top of the page, with a Retry link (an empty list therefore always means no posts, not an outage).
 - `all` tag behavior is normalized to no-filter so latest posts render consistently.
 - Posts can be sorted by Date Created or Last Edited, each with ascending/descending order, via the sort control next to "New Post". Selection is stored in the `sort` query param (e.g. `?sort=updated_desc`) so it's shareable/bookmarkable.
 - Post tiles show a compact meta row (created date, an "Edited" badge when the post has been updated, and tags) above a 2-line content preview, instead of a separate footer row, to fit more posts on screen.
 - Editing a post and saving returns to the list with that post's preview reopened automatically (instead of the top of the list), so it's easy to keep refining the same post.
 - The "Filter by Tags" sidebar is collapsible (chevron toggle in its header) so the post list can use the full width when tag filtering isn't needed.
-- Clicking a post tile's pencil icon opens an inline "quick edit" split view (Outlook-style) instead of navigating away: a compact list of posts on the left, the edit form on the right. Opening quick edit auto-collapses the tags sidebar (restored to its prior state on close). The panel has its own Prev/Next buttons, a button to open the same post in the full standalone editor, and a close (X) button. The full-page editor at `/mongo/edit/<id>` is still available directly or via that link, and also has Prev/Next buttons (based on the list order the user came from).
+- Clicking a post tile's pencil icon opens an inline "quick edit" split view (Outlook-style) instead of navigating away: a compact list of posts on the left, the edit form on the right. Opening quick edit auto-collapses the tags sidebar (restored to its prior state on close). The panel has its own Prev/Next buttons, a button to open the same post in the full standalone editor, and a close (X) button. The full-page editor at `/blog/mongo/edit/<id>` is still available directly or via that link, and also has Prev/Next buttons (based on the list order the user came from).
 - In the quick-edit panel, Title/Tags/Attachment are arranged in one compact row above the content area (instead of a tall sidebar), so the content editor gets the full width and most of the vertical space.
 - A floating round Save button stays fixed at the bottom-right of the screen while editing (both quick edit and the full-page editor), so long posts can be saved without scrolling back up to reach a Save button.
 - If a post has unsaved changes, navigating away from it while editing (Prev/Next, switching posts in quick edit, or closing quick edit) shows a "Discard changes?" confirmation before proceeding. Saving successfully clears the unsaved state.
@@ -47,7 +47,7 @@ Default behavior in the current config:
 - Create Post page uses the same two-column layout as Edit Post (sidebar + full-height content area).
 - Content editor is a WYSIWYG `contenteditable` div (ContentEditor component). Pasting an image:
   1. Detects the image from clipboard
-  2. Compresses via `canvas.toBlob` to `inlineImageMaxSizeMB` (3 MB default)
+  2. Re-encodes it as JPEG to ~`inlineImageTargetKB` (250 KB default), longest side capped at `inlineImageMaxDimensionPx` (1920 px); images already under the target keep their original bytes
   3. Inserts the **full compressed image** as an `<img>` tag in the editor
   4. Displays as a `100px` thumbnail (configurable: `inlineThumbnailMaxPx`) due to CSS styling
   5. User can drag edges to resize up to `inlineThumbnailMaxResizePx` (400px cap)
@@ -56,11 +56,11 @@ Default behavior in the current config:
 - Image-only posts are valid (the editor detects both text and `<img data-inline-id>` elements for validation).
 - Content is stored as raw HTML. List previews strip HTML tags for display. The preview modal and the editor sanitize stored HTML with DOMPurify before inserting it into the page.
 - One manual file attachment is supported per post (uploaded on submit as base64). File attachments are separate from inline editor images and appear only in the sidebar.
-- API body parser raised to 4.5 MB to accommodate inline image content.
+- API body parser raised to 4.5 MB to accommodate inline image content. The whole post (content with base64 images + attachment) is sent in one request, so the editor checks the size before saving and shows a clear error above ~4.4 MB (Vercel's request limit). At 250 KB per image that is about 12 photo-like images, or more for screenshots, which compress smaller.
 
 ### PG Blog Route
 
-- `/pg` lists posts from the configured PG-route backend.
+- `/blog/pg` lists posts from the configured PG-route backend.
 - Database connection errors are surfaced as a red error banner at the top of the page (e.g., timeout during schema init), with a Retry link.
 - Posts can be sorted by Date Created or Last Edited, each with ascending/descending order, via the same sort control used on the Mongo route.
 - Post tiles use the same denser layout as the Mongo route (compact meta row + 2-line preview), and editing a post returns to its reopened preview instead of the top of the list.

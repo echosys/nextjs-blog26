@@ -1,0 +1,134 @@
+{
+    "mongo": {
+        "database": "blog_2026",
+        "collections": [
+            {
+                "name": "analytics_events",
+                "estimatedCount": 18240,
+                "sampled": 25,
+                "indexes": ["_id_", "ts_1"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 25 },
+                    { "name": "event", "types": ["string"], "seenIn": 25 },
+                    { "name": "payload", "types": ["object"], "seenIn": 21 },
+                    { "name": "ts", "types": ["date"], "seenIn": 25 }
+                ]
+            },
+            {
+                "name": "blog_entry",
+                "estimatedCount": 42,
+                "sampled": 25,
+                "indexes": ["_id_"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 25 },
+                    { "name": "attachment", "types": ["string"], "seenIn": 25 },
+                    { "name": "attachmentName", "types": ["string"], "seenIn": 25 },
+                    { "name": "content", "types": ["string"], "seenIn": 25 },
+                    { "name": "createdAt", "types": ["date"], "seenIn": 25 },
+                    { "name": "tags", "types": ["array"], "seenIn": 25 },
+                    { "name": "title", "types": ["string"], "seenIn": 25 },
+                    { "name": "updatedAt", "types": ["date"], "seenIn": 11 }
+                ]
+            },
+            {
+                "name": "blog_login",
+                "estimatedCount": 2,
+                "sampled": 2,
+                "indexes": ["_id_"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 2 },
+                    { "name": "documentType", "types": ["string"], "seenIn": 1 },
+                    { "name": "login", "types": ["string"], "seenIn": 1 },
+                    { "name": "pw", "types": ["string"], "seenIn": 1 },
+                    { "name": "tags", "types": ["array"], "seenIn": 1 }
+                ]
+            },
+            {
+                "name": "tracker_categories",
+                "estimatedCount": 5,
+                "sampled": 5,
+                "indexes": ["_id_", "key_1"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 5 },
+                    { "name": "createdAt", "types": ["date"], "seenIn": 5 },
+                    { "name": "goal", "types": ["int"], "seenIn": 2 },
+                    { "name": "key", "types": ["string"], "seenIn": 5 },
+                    { "name": "name", "types": ["string"], "seenIn": 5 },
+                    { "name": "type", "types": ["string"], "seenIn": 5 },
+                    { "name": "unit", "types": ["string"], "seenIn": 2 }
+                ]
+            },
+            {
+                "name": "tracker_entries",
+                "estimatedCount": 61,
+                "sampled": 25,
+                "indexes": ["_id_", "date_1"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 25 },
+                    { "name": "createdAt", "types": ["date"], "seenIn": 25 },
+                    { "name": "date", "types": ["string"], "seenIn": 25 },
+                    { "name": "metrics", "types": ["object"], "seenIn": 25 },
+                    { "name": "notes", "types": ["string"], "seenIn": 25 },
+                    { "name": "updatedAt", "types": ["date"], "seenIn": 25 }
+                ]
+            },
+            {
+                "name": "tracker_todos",
+                "estimatedCount": 37,
+                "sampled": 25,
+                "indexes": ["_id_", "kind_1_doneAt_1_dueAt_1"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 25 },
+                    { "name": "createdAt", "types": ["date"], "seenIn": 25 },
+                    { "name": "doneAt", "types": ["date"], "seenIn": 14 },
+                    { "name": "doneDate", "types": ["string"], "seenIn": 14 },
+                    { "name": "dueAt", "types": ["date"], "seenIn": 19 },
+                    { "name": "kind", "types": ["string"], "seenIn": 25 },
+                    { "name": "tier", "types": ["int"], "seenIn": 25 },
+                    { "name": "title", "types": ["string"], "seenIn": 25 }
+                ]
+            }
+        ]
+    },
+    "postgres": {
+        "schema": "public",
+        "tables": [
+            {
+                "name": "legacy_orders",
+                "estimatedRows": 1250,
+                "indexes": ["legacy_orders_pkey"],
+                "columns": [
+                    { "name": "id", "type": "integer", "nullable": false, "defaultValue": "nextval('legacy_orders_id_seq'::regclass)" },
+                    { "name": "customer", "type": "text", "nullable": false, "defaultValue": null },
+                    { "name": "total_cents", "type": "integer", "nullable": false, "defaultValue": "0" },
+                    { "name": "placed_at", "type": "timestamp with time zone", "nullable": false, "defaultValue": "now()" }
+                ]
+            },
+            {
+                "name": "post_chunks",
+                "estimatedRows": 96,
+                "indexes": ["idx_post_chunks_post_id", "post_chunks_pkey", "uniq_post_chunks_post_chunk"],
+                "columns": [
+                    { "name": "id", "type": "integer", "nullable": false, "defaultValue": "nextval('post_chunks_id_seq'::regclass)" },
+                    { "name": "post_id", "type": "integer", "nullable": false, "defaultValue": null },
+                    { "name": "chunk_index", "type": "integer", "nullable": false, "defaultValue": null },
+                    { "name": "data", "type": "text", "nullable": false, "defaultValue": null }
+                ]
+            },
+            {
+                "name": "posts",
+                "estimatedRows": 18,
+                "indexes": ["idx_posts_created_at", "idx_posts_tags", "posts_pkey"],
+                "columns": [
+                    { "name": "id", "type": "integer", "nullable": false, "defaultValue": "nextval('posts_id_seq'::regclass)" },
+                    { "name": "title", "type": "text", "nullable": false, "defaultValue": null },
+                    { "name": "content", "type": "text", "nullable": false, "defaultValue": null },
+                    { "name": "tags", "type": "text[]", "nullable": false, "defaultValue": "ARRAY[]::text[]" },
+                    { "name": "attachment_name", "type": "text", "nullable": true, "defaultValue": null },
+                    { "name": "created_at", "type": "timestamp with time zone", "nullable": false, "defaultValue": "now()" },
+                    { "name": "updated_at", "type": "timestamp with time zone", "nullable": true, "defaultValue": null }
+                ]
+            }
+        ]
+    }
+}

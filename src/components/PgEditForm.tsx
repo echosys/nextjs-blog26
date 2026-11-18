@@ -240,7 +240,7 @@ const PgEditForm = forwardRef<EditFormHandle, PgEditFormProps>(function PgEditFo
                 setTimeout(() => setSavedFlash(false), 2000);
                 onSaved?.(idStr);
             } else {
-                window.location.href = `/pg?success=true&previewId=${id}`;
+                window.location.href = `/blog/pg?success=true&previewId=${id}`;
             }
         } catch (err: any) {
             setSubmitError(err.message ?? "Update failed. Please try again.");
@@ -256,7 +256,7 @@ const PgEditForm = forwardRef<EditFormHandle, PgEditFormProps>(function PgEditFo
     if (!post) return (
         <div className="text-center py-20">
             <h2 className="text-2xl font-bold text-white mb-4">Post not found</h2>
-            <Link href="/pg" className="text-teal-400 hover:underline">Back to Blog</Link>
+            <Link href="/blog/pg" className="text-teal-400 hover:underline">Back to Blog</Link>
         </div>
     );
 
@@ -320,7 +320,7 @@ const PgEditForm = forwardRef<EditFormHandle, PgEditFormProps>(function PgEditFo
                     )}
                     {isPanel && (
                         <>
-                            <Link href={`/pg/edit/${idStr}`} title="Open full editor"
+                            <Link href={`/blog/pg/edit/${idStr}`} title="Open full editor"
                                 className="p-2 text-slate-400 hover:text-teal-400 hover:bg-teal-400/10 rounded-lg transition-all">
                                 <Maximize2 size={16} />
                             </Link>

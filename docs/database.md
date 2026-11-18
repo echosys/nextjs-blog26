@@ -240,7 +240,7 @@ This reduces Lambda execution time and avoids timeouts from repeated schema oper
 
 ## API Body Parser Limits
 
-- `/api/blogs` (Mongo): 4.5 MB (accommodates 3 MB inline images + JSON envelope)
+- `/api/blogs` (Mongo): 4.5 MB (whole post incl. base64 inline images; the editor blocks saves above ~4.4 MB)
 - `/api/pg_blogs` (Postgres main): 4.5 MB
 - `/api/pg_blogs/chunks` (chunk upload): 4 MB (each 2 MB binary chunk becomes ~2.67 MB base64)
 
@@ -248,7 +248,7 @@ This reduces Lambda execution time and avoids timeouts from repeated schema oper
 
 ### Postgres Database Errors
 
-When database operations fail on the Postgres `/pg` list page (`src/app/pg/page.tsx`):
+When database operations fail on the Postgres `/blog/pg` list page (`src/app/blog/pg/page.tsx`):
 
 1. **UI Error Banner**: A red error banner displays the error message with a "Retry" link instead of silently showing "No posts found".
 2. **Server Logs**: `console.error()` is called with the error message so it appears in Vercel function logs.

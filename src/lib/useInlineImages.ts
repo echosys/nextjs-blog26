@@ -20,31 +20,38 @@ export function usePgInlineImages(
 
   useEffect(() => {
     if (!postId || !inlineImageMeta.length) return;
+    let cancelled = false;
 
-    const load = async () => {
-      for (const meta of inlineImageMeta) {
-        const chunkIdx = meta.chunks[0];
-        if (chunkIdx === undefined) continue;
-        setImages(prev => ({ ...prev, [meta.id]: { dataUrl: '', loading: true, error: false } }));
-        try {
-          const res = await fetch(`/api/pg_blogs/inline-images?id=${postId}&chunkIndex=${chunkIdx}`);
-          if (!res.ok) {
-            setImages(prev => ({ ...prev, [meta.id]: { dataUrl: '', loading: false, error: true } }));
-          } else {
-            const { data } = await res.json();
-            setImages(prev => ({ ...prev, [meta.id]: { dataUrl: base64ToDataUrl(data), loading: false, error: false } }));
-          }
-        } catch {
-          setImages(prev => ({ ...prev, [meta.id]: { dataUrl: '', loading: false, error: true } }));
-        }
-      }
+    const load = (meta: InlineImageMeta) => {
+      const chunkIdx = meta.chunks[0];
+      if (chunkIdx === undefined) return;
+      setImages(prev => ({ ...prev, [meta.id]: { dataUrl: '', loading: true, error: false } }));
+      fetchInlineImageData(postId, chunkIdx).then((data) => {
+        if (cancelled) return;
+        setImages(prev => ({
+          ...prev,
+          [meta.id]: data ? { dataUrl: base64ToDataUrl(data), loading: false, error: false } : { dataUrl: '', loading: false, error: true },
+        }));
+      });
     };
 
-    load();
+    inlineImageMeta.forEach(load);
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId, JSON.stringify(inlineImageMeta)]);
 
   return images;
+}
+
+async function fetchInlineImageData(postId: number, chunkIdx: number): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/pg_blogs/inline-images?id=${postId}&chunkIndex=${chunkIdx}`);
+    if (!res.ok) return null;
+    const { data } = await res.json();
+    return typeof data === 'string' ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Replace src="" placeholders with fetched data URLs. */
@@ -82,24 +89,25 @@ export async function loadInlineImagesForEdit(
     'box-shadow:0 0 0 1px #334155;';
 
   let result = htmlContent;
-  for (const meta of inlineImageMeta) {
-    const chunkIdx = meta.chunks[0];
-    if (chunkIdx === undefined) continue;
-    try {
-      const res = await fetch(`/api/pg_blogs/inline-images?id=${postId}&chunkIndex=${chunkIdx}`);
-      if (!res.ok) continue;
-      const { data } = await res.json();
-      const dataUrl = base64ToDataUrl(data);
-      const sizeKB = Math.round(data.length * 0.75 / 1024);
-      // Replace the whole placeholder <img ... data-inline-image-id="..."> with an editor-native img
-      result = result.replace(
-        new RegExp(`<img\\s+[^>]*data-inline-image-id="${meta.id}"[^>]*>`, 'g'),
-        `<img src="${dataUrl}" alt="inline image" data-inline-id="${meta.id}" ` +
-        `data-file-name="${meta.name}" data-size-kb="${sizeKB}" style="${thumbStyle}">`
-      );
-    } catch (err) {
-      console.error(`Failed to load inline image ${meta.id}:`, err);
+  const loaded = await Promise.all(
+    inlineImageMeta.map(async (meta) => {
+      const chunkIdx = meta.chunks[0];
+      return { meta, data: chunkIdx === undefined ? null : await fetchInlineImageData(postId, chunkIdx) };
+    })
+  );
+  for (const { meta, data } of loaded) {
+    if (!data) {
+      console.error(`Failed to load inline image ${meta.id}`);
+      continue;
     }
+    const dataUrl = base64ToDataUrl(data);
+    const sizeKB = Math.round(data.length * 0.75 / 1024);
+    // Replace the whole placeholder <img ... data-inline-image-id="..."> with an editor-native img
+    result = result.replace(
+      new RegExp(`<img\\s+[^>]*data-inline-image-id="${meta.id}"[^>]*>`, 'g'),
+      `<img src="${dataUrl}" alt="inline image" data-inline-id="${meta.id}" ` +
+      `data-file-name="${meta.name}" data-size-kb="${sizeKB}" style="${thumbStyle}">`
+    );
   }
   return result;
 }

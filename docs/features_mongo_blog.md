@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `/mongo` route provides a blog management interface backed by MongoDB (or a local JSON file in development). All CRUD operations go through `/api/blogs`.
+The `/blog/mongo` route provides a blog management interface backed by MongoDB (or a local JSON file in development). All CRUD operations go through `/api/blogs`.
 
 ## Content Editor
 
@@ -14,7 +14,7 @@ The `/mongo` route provides a blog management interface backed by MongoDB (or a 
 ## Inline Image Paste
 
 - Paste an image (from clipboard or drag-and-drop) into the editor.
-- The image is compressed using `canvas.toBlob` to a maximum of `inlineImageMaxSizeMB` MB (configured in `config/config.json`, default **3 MB**).
+- The image is re-encoded as JPEG to about `inlineImageTargetKB` (configured in `config/config.json`, default **250 KB**), with the longest side capped at `inlineImageMaxDimensionPx` (default **1920 px**). Images already under the target are stored unchanged.
 - A loading spinner is shown in the editor corner during compression.
 - The compressed image is inserted as an `<img>` element at the cursor position — visible immediately in the editor.
 - Images are embedded as **base64 data URLs** directly in the `content` HTML string.
@@ -31,7 +31,7 @@ The `/mongo` route provides a blog management interface backed by MongoDB (or a 
 
 - Next.js pages router body parser raised to **4.5 MB** (matching Vercel's API request limit).
 - This accommodates inline images embedded in the content field alongside other post fields.
-- MongoDB document size limit (16 MB BSON) is a secondary ceiling; the 4.5 MB Vercel limit is the practical constraint.
+- MongoDB document size limit (16 MB BSON) is a secondary ceiling; the 4.5 MB Vercel limit is the practical constraint. The editor checks the save size up front and asks you to remove images or shrink the attachment if it would exceed ~4.4 MB (roughly 12+ inline images at the default target).
 
 ## Layout
 
@@ -40,7 +40,7 @@ The `/mongo` route provides a blog management interface backed by MongoDB (or a 
 
 ## Tab Navigation
 
-- `src/app/mongo/loading.tsx` renders a skeleton immediately when the route loads, eliminating blank states.
+- `src/app/blog/mongo/loading.tsx` renders a skeleton immediately when the route loads, eliminating blank states.
 - `ActiveNavLink` calls `router.prefetch()` so the other tab's data is pre-warmed.
 
 ## Local Development

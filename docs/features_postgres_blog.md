@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `/pg` route provides a blog management interface backed by PostgreSQL (or a local JSON file in development). Post metadata and content go through `/api/pg_blogs`; file attachments and inline images go through dedicated chunk endpoints.
+The `/blog/pg` route provides a blog management interface backed by PostgreSQL (or a local JSON file in development). Post metadata and content go through `/api/pg_blogs`; file attachments and inline images go through dedicated chunk endpoints.
 
 ## Content Editor
 
@@ -14,7 +14,7 @@ The `/pg` route provides a blog management interface backed by PostgreSQL (or a 
 
 Unlike MongoDB (which stores inline images directly in content), Postgres uses a **chunked storage model** to avoid database history bloat:
 
-- Paste an image into the editor; it is compressed to `inlineImageMaxSizeMB` MB (default **3 MB**) and inserted as an `<img>` at the cursor. Images already under 3 MB are stored without re-encoding.
+- Paste an image into the editor; it is re-encoded as JPEG to about `inlineImageTargetKB` (default **250 KB**, longest side ≤ `inlineImageMaxDimensionPx`, default **1920 px**) and inserted as an `<img>` at the cursor. Images already under the target are stored without re-encoding. Each image is uploaded in its own request, so the number of inline images per post is not limited by the 4.5 MB request cap.
 - Images are NOT stored as base64 data URLs in the content field. Instead:
   - Content stores placeholder `<img data-inline-image-id="uuid" alt="filename" src=""/>` tags
   - Actual image data is stored in the `post_chunks` table. Each inline image occupies one chunk at a **fixed offset index** (starting at 1000)
@@ -88,7 +88,7 @@ CREATE TABLE post_chunks (
 
 ## Performance
 
-- `src/app/pg/loading.tsx` renders a skeleton immediately on tab click.
+- `src/app/blog/pg/loading.tsx` renders a skeleton immediately on tab click.
 - `ActiveNavLink` calls `router.prefetch()` to pre-warm the route.
 - `router.refresh()` is called before navigation after save/update to invalidate the Next.js router cache so the updated list appears immediately.
 

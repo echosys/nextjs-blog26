@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import LogoutButton from "./components/LogoutButton";
 import ActiveNavLink from "./components/ActiveNavLink";
@@ -6,11 +7,12 @@ import DbStatusIndicator from "./components/DbStatusIndicator";
 import { cookies, headers } from "next/headers";
 import { getRuntimeStorageConfig } from "../lib/runtimeConfig";
 import { SESSION_COOKIE, verifySessionToken } from "../lib/session";
+import { APPS, HUB_NAME } from "../lib/apps";
 
 
 export const metadata: Metadata = {
-    title: "Blog Manager",
-    description: "Dual-backend blog powered by Next.js, MongoDB & Postgres",
+    title: { default: HUB_NAME, template: `%s · ${HUB_NAME}` },
+    description: "Personal multi-app workspace powered by Next.js, MongoDB & Postgres",
 };
 
 export default async function RootLayout({
@@ -48,17 +50,16 @@ export default async function RootLayout({
             <body className="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
                 <div className="max-w-6xl mx-auto w-full px-6 py-6 flex-1">
                     <header className="mb-6 border-b border-slate-800 pb-4 flex justify-between items-center flex-wrap gap-4">
-                        <div>
-                            <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-blue-400 bg-clip-text text-transparent">
-                                Blog Manager
-                            </h1>
-                            <p className="text-slate-400 mt-2">MongoDB &amp; Postgres Content Hub</p>
-                        </div>
+                        <Link href="/" className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-blue-400 bg-clip-text text-transparent">
+                            {HUB_NAME}
+                        </Link>
                         {isLoggedIn && (
                             <div className="flex items-center gap-4 flex-wrap">
                                 <nav className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
-                                    <ActiveNavLink href="/mongo">Mongo Blog</ActiveNavLink>
-                                    <ActiveNavLink href="/pg">Postgres Blog</ActiveNavLink>
+                                    {APPS.flatMap((app) => app.nav).map((link) => (
+                                        <ActiveNavLink key={link.href} href={link.href} matchPrefix={link.matchPrefix}>{link.label}</ActiveNavLink>
+                                    ))}
+                                    <ActiveNavLink href="/settings">Settings</ActiveNavLink>
                                 </nav>
                                 <LogoutButton />
                             </div>
