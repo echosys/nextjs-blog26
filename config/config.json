@@ -2,23 +2,29 @@
     "runtimeNotes": "local applies to localhost and non-production development flows; deploy applies to hosted environments.",
     "inlineImageTargetKB": 250,
     "inlineImageMaxDimensionPx": 1920,
+    "maxSingleRequestBytes": 4400000,
     "inlineThumbnailMaxPx": 100,
     "inlineThumbnailMaxResizePx": 400,
     "keepAlive": {
         "enabled": true
     },
+    "auth": {
+        "sessionMaxAgeDays": 400
+    },
     "local": {
         "loginMode": "json",
         "mongoBlogMode": "json",
         "postgresBlogMode": "json",
-        "trackerMode": "json"
+        "trackerMode": "json",
+        "opsMode": "json"
     },
     "deploy": {
         "target": "vercel",
         "loginMode": "mongo",
         "mongoBlogMode": "mongo",
         "postgresBlogMode": "postgres",
-        "trackerMode": "mongo"
+        "trackerMode": "mongo",
+        "opsMode": "mongo"
     },
     "mongo": {
         "databaseName": "blog_2026",
@@ -29,17 +35,27 @@
         "blogTable": "posts",
         "attachmentTable": "post_chunks"
     },
+    "ops": {
+        "keepAliveRunsCollection": "ops_keepalive_runs",
+        "loginAttemptsCollection": "ops_login_attempts",
+        "retentionDays": 90,
+        "recentListLimit": 25
+    },
     "tracker": {
         "entriesCollection": "tracker_entries",
         "categoriesCollection": "tracker_categories",
         "todosCollection": "tracker_todos",
         "regularTodoWindowDays": 3,
         "activeTodoLimit": 15,
+        "analyticsRangesDays": [7, 30, 90, 365],
+        "heatmapWeeks": 53,
         "defaultCategories": [
-            { "key": "workout", "name": "Workout", "type": "boolean" },
-            { "key": "steps", "name": "Steps", "type": "amount", "unit": "steps", "goal": 10000 },
-            { "key": "reading", "name": "Reading", "type": "amount", "unit": "min", "goal": 30 },
-            { "key": "meditation", "name": "Meditation", "type": "boolean" }
+            { "key": "workout", "name": "Workout", "type": "amount", "unit": "min", "goal": 30 },
+            { "key": "wfh", "name": "WFH", "type": "boolean" },
+            { "key": "in-office", "name": "In Office", "type": "boolean" },
+            { "key": "chores", "name": "Chores", "type": "amount", "unit": "min" },
+            { "key": "study", "name": "Study", "type": "amount", "unit": "units" },
+            { "key": "tasks", "name": "Tasks", "type": "amount", "unit": "units" }
         ]
     },
     "json": {
@@ -47,6 +63,7 @@
         "mongoBlogFile": "config/localBlogData_mongo.json",
         "postgresBlogFile": "config/localBlogData_postgres.json",
         "trackerFile": "config/localTrackerData.json",
+        "opsFile": "config/localOpsData.json",
         "mockSchemaFile": "config/mockSchema.json"
     }
 }

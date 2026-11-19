@@ -5,13 +5,24 @@ export type MetricValue = boolean | number;
 
 export type TrackerCategory = {
     id: string;
+    /** Immutable storage key used in entry metrics; never reused, so old data can't be relabelled. */
     key: string;
     name: string;
     type: CategoryType;
     unit?: string;
     goal?: number;
     createdAt: string;
+    /** Local day the category started; unset for seeded defaults. */
+    startedOn?: string;
+    /** Local day the category was retired (deleted or replaced). Retired categories keep their data but take no new values. */
+    retiredOn?: string;
+    /** Key of the category created when this one was renamed or retyped. */
+    replacedBy?: string;
 };
+
+export function isActiveCategory(category: TrackerCategory): boolean {
+    return !category.retiredOn;
+}
 
 export type TrackerEntry = {
     id: string;
@@ -156,10 +167,10 @@ export function bucketTodos(todos: TrackerTodo[], nowMs: number, nowLimit: numbe
 
 // ---------- analytics ----------
 
-export type HeatmapCell = { date: string; level: 0 | 1 | 2 | 3 | 4; score: number } | null;
+export type HeatmapCell = { date: string; level: 0 | 1 | 2 | 3 | 4; score: number; outside: boolean } | null;
 
 /** GitHub-style grid: columns are weeks (Sunday first), the last column contains endKey; future days are null. */
-export function buildHeatmap(scoreByDate: Map<string, number>, endKey: string, weeks = 53): HeatmapCell[][] {
+export function buildHeatmap(scoreByDate: Map<string, number>, endKey: string, weeks = 53, isOutside: (date: string) => boolean = () => false): HeatmapCell[][] {
     const endWeekday = parseDateKey(endKey).getDay();
     const start = addDays(endKey, -(weeks - 1) * 7 - endWeekday);
     const columns: HeatmapCell[][] = [];
@@ -170,14 +181,31 @@ export function buildHeatmap(scoreByDate: Map<string, number>, endKey: string, w
             if (date > endKey) { column.push(null); continue; }
             const score = scoreByDate.get(date) ?? 0;
             const level = (score <= 0 ? 0 : score >= 4 ? 4 : score) as 0 | 1 | 2 | 3 | 4;
-            column.push({ date, level, score });
+            column.push({ date, level, score, outside: isOutside(date) });
         }
         columns.push(column);
     }
     return columns;
 }
 
+export type CategoryWindow = { from?: string; until?: string };
+
+/** Days a category could have been logged: from its start (or first value, if earlier) through its retirement day. */
+export function categoryWindow(category: TrackerCategory, entries: TrackerEntry[]): CategoryWindow {
+    let first: string | undefined;
+    for (const entry of entries) {
+        if (entry.metrics[category.key] !== undefined && (!first || entry.date < first)) first = entry.date;
+    }
+    const from = category.startedOn && first ? (category.startedOn < first ? category.startedOn : first) : category.startedOn ?? first;
+    return { from, until: category.retiredOn };
+}
+
+export function isOutsideWindow(date: string, window: CategoryWindow): boolean {
+    return Boolean((window.from && date < window.from) || (window.until && date > window.until));
+}
+
 export type CategoryStats = {
+    /** Days in range that fall inside the category's lifetime. */
     days: number;
     activeDays: number;
     activeDates: string[];
@@ -187,32 +215,35 @@ export type CategoryStats = {
     average: number;
     best: number;
     goalDays: number;
-    series: { date: string; value: number }[];
+    series: { date: string; value: number; outside: boolean }[];
 };
 
-export function categoryStats(category: TrackerCategory, entriesByDate: Map<string, TrackerEntry>, startKey: string, endKey: string): CategoryStats {
+export function categoryStats(category: TrackerCategory, entriesByDate: Map<string, TrackerEntry>, startKey: string, endKey: string, window: CategoryWindow = {}): CategoryStats {
     const series: CategoryStats['series'] = [];
     for (let date = startKey; date <= endKey; date = addDays(date, 1)) {
         const value = entriesByDate.get(date)?.metrics[category.key];
-        series.push({ date, value: typeof value === 'number' ? value : value === true ? 1 : 0 });
+        series.push({ date, value: typeof value === 'number' ? value : value === true ? 1 : 0, outside: isOutsideWindow(date, window) });
     }
 
-    const active = series.filter((point) => point.value > 0);
+    const inside = series.filter((point) => !point.outside);
+    const active = inside.filter((point) => point.value > 0);
     let longestStreak = 0;
     let run = 0;
-    for (const point of series) {
+    for (const point of inside) {
         run = point.value > 0 ? run + 1 : 0;
         longestStreak = Math.max(longestStreak, run);
     }
-    // A streak is still "current" if today simply hasn't been logged yet.
-    let index = series.length - 1;
-    if (index >= 0 && series[index].value <= 0) index--;
+    // A streak is still "current" if today simply hasn't been logged yet; retired categories have none.
     let currentStreak = 0;
-    while (index >= 0 && series[index].value > 0) { currentStreak++; index--; }
+    if (isActiveCategory(category)) {
+        let index = inside.length - 1;
+        if (index >= 0 && inside[index].value <= 0) index--;
+        while (index >= 0 && inside[index].value > 0) { currentStreak++; index--; }
+    }
 
     const total = active.reduce((sum, point) => sum + point.value, 0);
     return {
-        days: series.length,
+        days: inside.length,
         activeDays: active.length,
         activeDates: active.map((point) => point.date),
         currentStreak,
@@ -233,16 +264,30 @@ export function slugify(name: string): string {
     return name.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_-]+/g, '-').slice(0, 40);
 }
 
-export function sanitizeCategoryInput(body: any): Omit<TrackerCategory, 'id' | 'createdAt'> {
+/** Keys are never reused, so a renamed/retyped category's history can't merge into a new one. */
+export function uniqueKey(base: string, existingKeys: Iterable<string>): string {
+    const taken = new Set(existingKeys);
+    if (!taken.has(base)) return base;
+    let suffix = 2;
+    while (taken.has(`${base}-${suffix}`)) suffix++;
+    return `${base}-${suffix}`;
+}
+
+/** Goal tweaks keep the category; anything that changes what the numbers mean starts a new one. */
+export function categoryEditMode(existing: TrackerCategory, next: Pick<TrackerCategory, 'name' | 'type' | 'unit'>): 'in-place' | 'replace' {
+    const same = existing.name === next.name && existing.type === next.type && (existing.unit ?? '') === (next.unit ?? '');
+    return same ? 'in-place' : 'replace';
+}
+
+export function sanitizeCategoryInput(body: any): Pick<TrackerCategory, 'name' | 'type' | 'unit' | 'goal'> {
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
     if (!name || name.length > 40) throw new TrackerInputError('Category name must be 1-40 characters');
-    const key = slugify(name);
-    if (!key) throw new TrackerInputError('Category name needs at least one letter or digit');
+    if (!slugify(name)) throw new TrackerInputError('Category name needs at least one letter or digit');
     const type: CategoryType = body?.type === 'amount' ? 'amount' : 'boolean';
     const unit = type === 'amount' && typeof body?.unit === 'string' && body.unit.trim() ? body.unit.trim().slice(0, 20) : undefined;
     const goalNumber = Number(body?.goal);
     const goal = type === 'amount' && Number.isFinite(goalNumber) && goalNumber > 0 ? goalNumber : undefined;
-    return { key, name, type, ...(unit ? { unit } : {}), ...(goal ? { goal } : {}) };
+    return { name, type, ...(unit ? { unit } : {}), ...(goal ? { goal } : {}) };
 }
 
 export function sanitizeEntryInput(body: any, categories: TrackerCategory[]): { date: string; notes: string; metrics: Record<string, MetricValue> } {

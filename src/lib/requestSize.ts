@@ -1,7 +1,7 @@
 import { formatBytes } from './inlineImages';
+import runtimeConfig from './runtimeConfig';
 
-// Vercel rejects request bodies over 4.5 MB; keep headroom for headers/encoding differences.
-export const MAX_SINGLE_REQUEST_BYTES = 4_400_000;
+export const MAX_SINGLE_REQUEST_BYTES = runtimeConfig.maxSingleRequestBytes;
 
 /** Returns a user-facing error if a single-request save would exceed the platform body limit. */
 export function checkRequestSize(body: string, attachmentDataUrl = ''): string | null {

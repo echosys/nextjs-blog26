@@ -5,7 +5,7 @@ import { readJsonDocument } from './storage';
 
 /** Which App Hub app owns each collection/table; anything else in a shared database is someone else's. */
 export function getSchemaOwners(): { mongo: Record<string, string>; postgres: Record<string, string> } {
-    const { mongo, postgres, tracker } = runtimeConfig;
+    const { mongo, postgres, tracker, ops } = runtimeConfig;
     return {
         mongo: {
             [mongo.loginCollection]: 'Blog · login & tag cache',
@@ -13,6 +13,8 @@ export function getSchemaOwners(): { mongo: Record<string, string>; postgres: Re
             [tracker.entriesCollection]: 'Tracker · journal entries',
             [tracker.categoriesCollection]: 'Tracker · categories',
             [tracker.todosCollection]: 'Tracker · to-dos',
+            [ops.keepAliveRunsCollection]: 'Settings · keep-alive log',
+            [ops.loginAttemptsCollection]: 'Auth · login attempts',
         },
         postgres: {
             [postgres.blogTable]: 'Blog · Postgres posts',

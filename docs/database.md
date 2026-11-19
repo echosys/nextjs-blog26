@@ -11,12 +11,16 @@ All runtime storage settings live in `config/config.json`.
   "local": {
     "loginMode": "json",
     "mongoBlogMode": "json",
-    "postgresBlogMode": "json"
+    "postgresBlogMode": "json",
+    "trackerMode": "json",
+    "opsMode": "json"
   },
   "deploy": {
     "loginMode": "mongo",
     "mongoBlogMode": "mongo",
-    "postgresBlogMode": "postgres"
+    "postgresBlogMode": "postgres",
+    "trackerMode": "mongo",
+    "opsMode": "mongo"
   },
   "mongo": {
     "databaseName": "blog_2026",
@@ -27,10 +31,29 @@ All runtime storage settings live in `config/config.json`.
     "blogTable": "posts",
     "attachmentTable": "post_chunks"
   },
+  "ops": {
+    "keepAliveRunsCollection": "ops_keepalive_runs",
+    "loginAttemptsCollection": "ops_login_attempts",
+    "retentionDays": 90,
+    "recentListLimit": 25
+  },
+  "tracker": {
+    "entriesCollection": "tracker_entries",
+    "categoriesCollection": "tracker_categories",
+    "todosCollection": "tracker_todos",
+    "regularTodoWindowDays": 3,
+    "activeTodoLimit": 15,
+    "analyticsRangesDays": [7, 30, 90, 365],
+    "heatmapWeeks": 53,
+    "defaultCategories": ["...see config/config.json"]
+  },
   "json": {
     "loginFile": "config/user.json",
     "mongoBlogFile": "config/localBlogData_mongo.json",
-    "postgresBlogFile": "config/localBlogData_postgres.json"
+    "postgresBlogFile": "config/localBlogData_postgres.json",
+    "trackerFile": "config/localTrackerData.json",
+    "opsFile": "config/localOpsData.json",
+    "mockSchemaFile": "config/mockSchema.json"
   }
 }
 ```
@@ -150,6 +173,100 @@ Bootstrap behavior:
 
 - creates both collections if missing
 - upserts the `tag-cache` document if missing
+
+### Tracker Collections
+
+Names come from `tracker.*Collection` in `config/config.json`. Local JSON mode stores the same shapes as arrays in `config/localTrackerData.json` (`{ categories, entries, todos }`, string ids).
+
+`tracker_categories` (unique index `key_1`):
+
+```json
+{
+  "_id": "ObjectId",
+  "key": "String (immutable, never reused)",
+  "name": "String",
+  "type": "boolean | amount",
+  "unit": "String (amount only, optional)",
+  "goal": "Number (amount only, optional)",
+  "createdAt": "Date",
+  "startedOn": "YYYY-MM-DD (absent for seeded defaults)",
+  "retiredOn": "YYYY-MM-DD (present = retired, read-only)",
+  "replacedBy": "String (key of the category created by a rename/retype)"
+}
+```
+
+`tracker_entries` (unique index `date_1`, one document per local day):
+
+```json
+{
+  "_id": "ObjectId",
+  "date": "YYYY-MM-DD",
+  "notes": "String",
+  "metrics": { "<category key>": "true | Number" },
+  "createdAt": "Date",
+  "updatedAt": "Date"
+}
+```
+
+`tracker_todos` (index `kind_1_doneAt_1_dueAt_1`):
+
+```json
+{
+  "_id": "ObjectId",
+  "title": "String",
+  "kind": "regular | longterm",
+  "tier": "1 | 2",
+  "createdAt": "Date",
+  "dueAt": "Date (regular only: createdAt + regularTodoWindowDays)",
+  "doneAt": "Date (optional)",
+  "doneDate": "YYYY-MM-DD (local day completed; links to the journal)"
+}
+```
+
+Relationships:
+
+- `entries.metrics` keys → `categories.key` (many entries reference one category; values are only written for active categories).
+- `categories.replacedBy` → `categories.key` (chain of replacements after renames/retypes).
+- `todos.doneDate` → `entries.date` (soft link by day; an entry need not exist).
+
+Bootstrap behavior: indexes are created and `tracker.defaultCategories` are inserted on first use when the categories collection is empty (JSON mode: when the file has no `categories`).
+
+Migration notes:
+
+- No migrations are needed for category edits: renames/retypes add a document and set `retiredOn`/`replacedBy` on the old one; deletes only set `retiredOn`. Existing entry metrics are never rewritten.
+- Documents created before the lifecycle fields existed are treated as active categories without a start day.
+- Changing `tracker.defaultCategories` only affects new, empty stores; existing categories are left as-is.
+
+### Ops Collections (keep-alive log, login audit)
+
+Names come from `ops.*Collection`. Both have a TTL index on `at` (`expireAfterSeconds = ops.retentionDays × 86400`, default 90 days) that also serves newest-first queries. Local JSON mode stores `{ keepAliveRuns, loginAttempts }` (newest first, trimmed to the retention window on write) in `config/localOpsData.json` (git-ignored; contains IPs).
+
+`ops_keepalive_runs` (one per `/api/keepalive` call while keep-alive is enabled):
+
+```json
+{
+  "_id": "ObjectId",
+  "at": "Date",
+  "source": "cron | login-page | settings | api",
+  "results": [{ "backend": "mongo | postgres", "configured": "Boolean", "ok": "Boolean", "ms": "Number", "message": "String (on failure)" }]
+}
+```
+
+`ops_login_attempts` (one per `POST /api/login`; passwords are never stored):
+
+```json
+{
+  "_id": "ObjectId",
+  "at": "Date",
+  "login": "String (attempted username, or \"(invalid)\")",
+  "success": "Boolean",
+  "outcome": "success | invalid-credentials | invalid-input | error",
+  "ip": "String (first x-forwarded-for hop, x-real-ip, or socket address)",
+  "userAgent": "String (≤ 300 chars)"
+}
+```
+
+Bootstrap: TTL indexes are created on first use. Migration: none; changing `ops.retentionDays` later requires dropping and recreating the `at_1` index (or `collMod`) because existing TTL indexes keep their original expiry.
 
 ## Postgres Layout
 

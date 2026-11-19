@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSessionToken, verifySessionToken } from '../lib/session';
+import { createSessionToken, SESSION_MAX_AGE_SECONDS, verifySessionToken } from '../lib/session';
 
 describe('session tokens', () => {
     it('accepts a token it signed', async () => {
@@ -21,7 +21,7 @@ describe('session tokens', () => {
     it('rejects expired tokens', async () => {
         const token = await createSessionToken('test');
         const realNow = Date.now;
-        Date.now = () => realNow() + 401 * 24 * 60 * 60 * 1000;
+        Date.now = () => realNow() + (SESSION_MAX_AGE_SECONDS + 86_400) * 1000;
         try {
             expect(await verifySessionToken(token)).toBe(false);
         } finally {

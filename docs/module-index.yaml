@@ -1,0 +1,165 @@
+# Machine-readable map of the codebase. Keep in sync with docs/modules/*.md (see agent.md).
+- name: app-shell
+  responsibility: Root layout, top-bar tabs, app navigator, shared nav/status/time UI, app registry
+  owned_paths:
+    - src/app/layout.tsx
+    - src/app/page.tsx
+    - src/app/globals.css
+    - src/app/components/**
+    - src/lib/apps.ts
+  primary_files:
+    - src/app/layout.tsx
+    - src/lib/apps.ts
+    - src/app/components/ActiveNavLink.tsx
+    - src/app/components/DbStatusIndicator.tsx
+  entry_points:
+    - GET / (app navigator)
+  dependencies:
+    - auth
+    - storage
+  related_docs:
+    - docs/modules/app-shell.md
+    - docs/architecture.md
+  related_tests: []
+
+- name: auth
+  responsibility: Signed session cookie, login/logout, route protection, post-login return path
+  owned_paths:
+    - src/lib/session.ts
+    - src/lib/nextPath.ts
+    - src/proxy.ts
+    - src/app/login/**
+    - src/pages/api/login.ts
+    - src/pages/api/logout.ts
+  primary_files:
+    - src/lib/session.ts
+    - src/proxy.ts
+    - src/pages/api/login.ts
+  entry_points:
+    - GET /login
+    - POST /api/login
+    - POST /api/logout
+  dependencies:
+    - storage
+    - settings-ops
+  related_docs:
+    - docs/modules/auth.md
+  related_tests:
+    - src/__tests__/session.test.ts
+    - src/__tests__/nextPath.test.ts
+
+- name: storage
+  responsibility: Runtime profile and storage-mode resolution, JSON/Mongo/Postgres clients, blog+login adapter, logging
+  owned_paths:
+    - src/lib/runtimeConfig.ts
+    - src/lib/storage.ts
+    - src/lib/mongodb.ts
+    - src/lib/pg.ts
+    - src/lib/logger.ts
+    - config/config.json
+  primary_files:
+    - src/lib/runtimeConfig.ts
+    - src/lib/storage.ts
+  entry_points: []
+  dependencies: []
+  related_docs:
+    - docs/modules/storage.md
+    - docs/database.md
+  related_tests: []
+
+- name: blog
+  responsibility: Mongo and Postgres blog UI, editors, inline images, attachments, blog APIs
+  owned_paths:
+    - src/app/blog/**
+    - src/components/**
+    - src/lib/inlineImages.ts
+    - src/lib/useInlineImages.ts
+    - src/lib/editNav.ts
+    - src/lib/requestSize.ts
+    - src/pages/api/blogs.ts
+    - src/pages/api/blogs/**
+    - src/pages/api/pg_blogs.ts
+    - src/pages/api/pg_blogs/**
+    - src/pages/api/tags.ts
+  primary_files:
+    - src/components/ContentEditor.tsx
+    - src/components/MongoEditForm.tsx
+    - src/components/PgEditForm.tsx
+    - src/components/PostPreview.tsx
+    - src/app/blog/mongo/MongoPostList.tsx
+    - src/app/blog/pg/PgPostList.tsx
+  entry_points:
+    - GET /blog/mongo
+    - GET /blog/pg
+    - /api/blogs (GET, POST, PUT, DELETE)
+    - GET /api/blogs/download/[id]
+    - /api/pg_blogs (GET, POST, PUT, DELETE)
+    - /api/pg_blogs/inline-images (GET, POST, DELETE)
+    - POST /api/pg_blogs/chunks
+    - GET /api/pg_blogs/download/[id]
+    - GET /api/tags
+  dependencies:
+    - storage
+    - auth
+  related_docs:
+    - docs/modules/blog.md
+    - docs/feature_blog_image.md
+    - docs/features_mongo_blog.md
+    - docs/features_postgres_blog.md
+  related_tests: []
+
+- name: tracker
+  responsibility: Daily journal with category metrics, category lifecycle, to-dos, analytics
+  owned_paths:
+    - src/app/tracker/**
+    - src/lib/tracker/**
+    - src/pages/api/tracker/**
+  primary_files:
+    - src/lib/tracker/model.ts
+    - src/lib/tracker/storage.ts
+    - src/app/tracker/JournalView.tsx
+    - src/app/tracker/TodosView.tsx
+    - src/app/tracker/AnalyticsView.tsx
+  entry_points:
+    - GET /tracker
+    - GET /tracker/todos
+    - GET /tracker/analytics
+    - /api/tracker/categories (GET, POST, PATCH, DELETE)
+    - /api/tracker/entries (GET, PUT)
+    - /api/tracker/todos (GET, POST, PATCH, DELETE)
+  dependencies:
+    - storage
+    - auth
+  related_docs:
+    - docs/modules/tracker.md
+    - docs/feature_tracker.md
+  related_tests:
+    - src/__tests__/tracker.test.ts
+
+- name: settings-ops
+  responsibility: Settings page, DB keep-alive and its run log, login-attempt audit, health/status endpoints, schema introspection and ownership labels
+  owned_paths:
+    - src/app/settings/**
+    - src/lib/dbAdmin.ts
+    - src/lib/opsLog.ts
+    - src/pages/api/keepalive.ts
+    - src/pages/api/status.ts
+    - src/pages/api/pg_status.ts
+    - config/mockSchema.json
+    - vercel.json
+  primary_files:
+    - src/app/settings/page.tsx
+    - src/lib/dbAdmin.ts
+    - src/lib/opsLog.ts
+  entry_points:
+    - GET /settings
+    - GET /api/keepalive
+    - GET /api/status
+    - GET /api/pg_status
+  dependencies:
+    - storage
+  related_docs:
+    - docs/modules/settings-ops.md
+    - docs/database.md
+  related_tests:
+    - src/__tests__/opsLog.test.ts

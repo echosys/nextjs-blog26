@@ -20,13 +20,28 @@ Default behavior in the current config:
 
 ## User-Facing Behavior
 
+### Settings: keep-alive log and login activity
+
+- The keep-alive section shows the **last run** (local time and "x min ago"), **what triggered it** (daily cron, login page visit, Settings button, or a direct API call), each database's result, the last fully successful run if the latest failed, and a collapsible list of previous runs.
+- A **Login activity** section lists the latest attempts (`ops.recentListLimit`, default 25): time, result (success / invalid credentials / invalid input / error), attempted username, IP, and browser, plus the number of failures in the last 24 hours. Passwords are never stored.
+- Both logs are kept for `ops.retentionDays` (default 90) and stored in MongoDB in deploy (`ops_keepalive_runs`, `ops_login_attempts`).
+
+### Tracker
+
+- Daily journal (notes + category values), four-quadrant to-dos, and analytics at `/tracker`. Full behaviour and acceptance criteria: `docs/feature_tracker.md`.
+- Categories are never deleted or relabelled: delete retires a category, and rename / type / unit changes start a new category from today while the old one keeps its history. Retired categories are hidden in Analytics unless included or selected explicitly, and their out-of-lifetime days are shaded.
+
+### Blog inline images
+
+- Pasted images are compressed to ~250 KB each; Mongo saves are size-checked against the 4.5 MB request limit; Postgres uploads images individually. Details: `docs/feature_blog_image.md`.
+
 ### Login
 
 - `/login` authenticates through the active login adapter.
 - In local JSON mode, credentials come from `config/user.json`.
 - In deploy Mongo mode, credentials come from the configured Mongo login collection.
 - The login status card now shows the active storage label and mode instead of assuming MongoDB.
-- A successful login sets a signed, HttpOnly `session` cookie valid for 400 days; Logout clears it server-side via `POST /api/logout`.
+- A successful login sets a signed, HttpOnly `session` cookie valid for `auth.sessionMaxAgeDays` (default 400 days, the browser maximum); Logout clears it server-side via `POST /api/logout`.
 
 ### Mongo Blog Route
 

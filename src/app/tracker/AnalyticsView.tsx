@@ -1,16 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarDays, Flame, ListChecks, Target } from "lucide-react";
+import { Archive, CalendarDays, Flame, ListChecks, Target } from "lucide-react";
 import {
     addDays,
     buildHeatmap,
     categoryStats,
+    categoryWindow,
     entryActivity,
     formatDay,
     formatMetric,
     formatMonth,
+    isActiveCategory,
     isMetricDone,
+    isOutsideWindow,
     monthKeyOf,
     toDateKey,
     type HeatmapCell,
@@ -20,8 +23,9 @@ import {
 } from "../../lib/tracker/model";
 import { LoadingCard, useMounted } from "./client";
 
-const RANGES = [7, 30, 90, 365] as const;
 const LEVEL_CLASS = ["bg-slate-800/70", "bg-teal-900", "bg-teal-700", "bg-teal-500", "bg-teal-300"];
+// Days outside a category's lifetime: shown, but visibly "not applicable" rather than "missed".
+const OUTSIDE_CLASS = "bg-transparent border border-slate-800";
 
 function Heatmap({ columns, describe }: { columns: HeatmapCell[][]; describe: (date: string) => string }) {
     let lastMonth = "";
@@ -41,7 +45,8 @@ function Heatmap({ columns, describe }: { columns: HeatmapCell[][]; describe: (d
                     {columns.map((column, index) => (
                         <div key={index} className="flex flex-col gap-[3px]">
                             {column.map((cell, weekday) => cell
-                                ? <span key={weekday} title={describe(cell.date)} className={`block w-[11px] h-[11px] rounded-[2px] ${LEVEL_CLASS[cell.level]}`} />
+                                ? <span key={weekday} title={cell.outside ? `${formatDay(cell.date)}: not tracked (outside category lifetime)` : describe(cell.date)}
+                                    className={`block w-[11px] h-[11px] rounded-[2px] ${cell.outside && cell.level === 0 ? OUTSIDE_CLASS : LEVEL_CLASS[cell.level]}`} />
                                 : <span key={weekday} className="block w-[11px] h-[11px]" />)}
                         </div>
                     ))}
@@ -54,7 +59,7 @@ function Heatmap({ columns, describe }: { columns: HeatmapCell[][]; describe: (d
     );
 }
 
-function BarChart({ series, goal, unit }: { series: { date: string; value: number }[]; goal?: number; unit?: string }) {
+function BarChart({ series, goal, unit }: { series: { date: string; value: number; outside: boolean }[]; goal?: number; unit?: string }) {
     const max = Math.max(goal ?? 0, ...series.map((point) => point.value), 1);
     const width = series.length * 10;
     return (
@@ -62,6 +67,9 @@ function BarChart({ series, goal, unit }: { series: { date: string; value: numbe
             <div className="flex justify-between text-[10px] text-slate-500"><span>{max.toLocaleString()} {unit}</span>{goal ? <span className="text-amber-400/80">goal {goal.toLocaleString()}</span> : null}</div>
             <svg viewBox={`0 0 ${width} 100`} preserveAspectRatio="none" className="w-full h-28 bg-slate-950/40 rounded-md" role="img" aria-label="Daily values">
                 {series.map((point, index) => {
+                    if (point.outside && point.value <= 0) {
+                        return <rect key={point.date} x={index * 10} y={0} width={10} height={100} className="fill-slate-800/40"><title>{`${formatDay(point.date)}: not tracked`}</title></rect>;
+                    }
                     const height = (point.value / max) * 100;
                     return (
                         <rect key={point.date} x={index * 10 + 1} y={100 - height} width={8} height={height}
@@ -77,12 +85,12 @@ function BarChart({ series, goal, unit }: { series: { date: string; value: numbe
     );
 }
 
-function DayStrip({ series }: { series: { date: string; value: number }[] }) {
+function DayStrip({ series }: { series: { date: string; value: number; outside: boolean }[] }) {
     return (
         <div className="flex flex-wrap gap-[3px]">
             {series.map((point) => (
-                <span key={point.date} title={`${formatDay(point.date)}: ${point.value > 0 ? "done" : "—"}`}
-                    className={`w-[9px] h-[9px] rounded-[2px] ${point.value > 0 ? "bg-teal-400" : "bg-slate-800"}`} />
+                <span key={point.date} title={`${formatDay(point.date)}: ${point.value > 0 ? "done" : point.outside ? "not tracked" : "—"}`}
+                    className={`w-[9px] h-[9px] rounded-[2px] ${point.value > 0 ? "bg-teal-400" : point.outside ? OUTSIDE_CLASS : "bg-slate-800"}`} />
             ))}
         </div>
     );
@@ -97,15 +105,25 @@ function Stat({ label, value }: { label: string; value: string }) {
     );
 }
 
-export default function AnalyticsView({ categories, entries, todos }: { categories: TrackerCategory[]; entries: TrackerEntry[]; todos: TrackerTodo[] }) {
+export default function AnalyticsView({ categories, entries, todos, settings }: {
+    categories: TrackerCategory[];
+    entries: TrackerEntry[];
+    todos: TrackerTodo[];
+    settings: { analyticsRangesDays: number[]; heatmapWeeks: number };
+}) {
     const mounted = useMounted();
-    const [range, setRange] = useState<(typeof RANGES)[number]>(30);
+    const ranges = settings.analyticsRangesDays;
+    const [range, setRange] = useState<number>(ranges.includes(30) ? 30 : ranges[0]);
     const [selected, setSelected] = useState<string>("all");
+    const [includeRetired, setIncludeRetired] = useState(false);
 
     const entriesByDate = useMemo(() => new Map(entries.map((entry) => [entry.date, entry])), [entries]);
     const today = mounted ? toDateKey(new Date()) : "";
     const start = today ? addDays(today, -(range - 1)) : "";
     const category = categories.find((item) => item.key === selected);
+    const active = categories.filter(isActiveCategory);
+    const retired = categories.filter((item) => !isActiveCategory(item));
+    const windows = useMemo(() => new Map(categories.map((item) => [item.key, categoryWindow(item, entries)])), [categories, entries]);
 
     const heatmap = useMemo(() => {
         if (!today) return [];
@@ -117,18 +135,20 @@ export default function AnalyticsView({ categories, entries, todos }: { categori
             const ratio = category.type === "amount" && category.goal && typeof value === "number" ? value / category.goal : 1;
             scores.set(entry.date, Math.max(1, Math.min(4, Math.ceil(ratio * 4))));
         }
-        return buildHeatmap(scores, today);
-    }, [entries, category, today]);
+        const window = category ? windows.get(category.key) ?? {} : {};
+        return buildHeatmap(scores, today, settings.heatmapWeeks, (date) => isOutsideWindow(date, window));
+    }, [entries, category, today, windows, settings.heatmapWeeks]);
 
     const stats = useMemo(
-        () => (today ? categories.map((item) => ({ category: item, stats: categoryStats(item, entriesByDate, start, today) })) : []),
-        [categories, entriesByDate, start, today],
+        () => (today ? categories.map((item) => ({ category: item, stats: categoryStats(item, entriesByDate, start, today, windows.get(item.key)) })) : []),
+        [categories, entriesByDate, start, today, windows],
     );
 
     if (!mounted) return <LoadingCard />;
 
-    const yearStart = addDays(today, -364);
-    const trackedThisYear = entries.filter((entry) => entry.date >= yearStart && entryActivity(entry) > 0).length;
+    const heatmapStart = addDays(today, -(settings.heatmapWeeks * 7 - 1));
+    const heatmapLabel = settings.heatmapWeeks >= 52 ? "last 12 months" : `last ${settings.heatmapWeeks} weeks`;
+    const trackedInHeatmap = entries.filter((entry) => entry.date >= heatmapStart && entryActivity(entry) > 0).length;
     let journalStreak = 0;
     for (let day = entriesByDate.has(today) ? today : addDays(today, -1); entriesByDate.has(day); day = addDays(day, -1)) journalStreak++;
     const todosDone = todos.filter((todo) => todo.doneDate && todo.doneDate >= start && todo.doneDate <= today).length;
@@ -137,17 +157,23 @@ export default function AnalyticsView({ categories, entries, todos }: { categori
     const describe = (date: string) => {
         const entry = entriesByDate.get(date);
         if (!entry) return `${formatDay(date)}: no entry`;
-        const done = categories.filter((item) => isMetricDone(entry.metrics[item.key])).map((item) => item.type === "boolean" ? item.name : `${item.name} ${formatMetric(item, entry.metrics[item.key])}`);
+        const done = categories.filter((item) => isMetricDone(entry.metrics[item.key])).map((item) => {
+            const label = item.type === "boolean" ? item.name : `${item.name} ${formatMetric(item, entry.metrics[item.key])}`;
+            return isActiveCategory(item) ? label : `${label} (retired)`;
+        });
         return `${formatDay(date)}: ${[...done, entry.notes.trim() ? "notes" : ""].filter(Boolean).join(", ") || "entry"}`;
     };
 
-    const visible = category ? stats.filter((item) => item.category.key === category.key) : stats;
+    const nameOf = (key?: string) => categories.find((item) => item.key === key)?.name ?? key;
+    const visible = category
+        ? stats.filter((item) => item.category.key === category.key)
+        : stats.filter((item) => includeRetired || isActiveCategory(item.category));
 
     return (
         <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-3">
                 <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
-                    {RANGES.map((option) => (
+                    {ranges.map((option) => (
                         <button key={option} type="button" onClick={() => setRange(option)} aria-pressed={range === option}
                             className={`px-3 py-1.5 rounded-md ${range === option ? "bg-teal-500 text-white" : "text-slate-400 hover:text-white"}`}>
                             {option === 365 ? "1 year" : `${option} days`}
@@ -156,16 +182,27 @@ export default function AnalyticsView({ categories, entries, todos }: { categori
                 </div>
                 <select value={selected} onChange={(e) => setSelected(e.target.value)} aria-label="Category filter"
                     className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-teal-500">
-                    <option value="all">All categories</option>
-                    {categories.map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
+                    <option value="all">All active categories</option>
+                    {active.map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
+                    {retired.length > 0 && (
+                        <optgroup label="Retired">
+                            {retired.map((item) => <option key={item.key} value={item.key}>{item.name} (until {item.retiredOn})</option>)}
+                        </optgroup>
+                    )}
                 </select>
+                {!category && retired.length > 0 && (
+                    <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+                        <input type="checkbox" checked={includeRetired} onChange={(e) => setIncludeRetired(e.target.checked)} className="accent-teal-500" />
+                        Include retired ({retired.length})
+                    </label>
+                )}
             </div>
 
             <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
-                    <h2 className="flex items-center gap-2 font-semibold text-white"><CalendarDays size={16} className="text-teal-400" /> {category ? `${category.name} · last 12 months` : "Journal · last 12 months"}</h2>
+                    <h2 className="flex items-center gap-2 font-semibold text-white"><CalendarDays size={16} className="text-teal-400" /> {category ? `${category.name} · ${heatmapLabel}` : `Journal · ${heatmapLabel}`}</h2>
                     <div className="flex gap-6">
-                        <Stat label="days tracked (1y)" value={String(trackedThisYear)} />
+                        <Stat label={`days tracked (${heatmapLabel.replace("last ", "")})`} value={String(trackedInHeatmap)} />
                         <Stat label="journal streak" value={`${journalStreak}d`} />
                     </div>
                 </div>
@@ -173,16 +210,24 @@ export default function AnalyticsView({ categories, entries, todos }: { categori
             </section>
 
             <div className="grid gap-4 md:grid-cols-2 items-start">
-                {visible.map(({ category: item, stats: itemStats }) => (
-                    <section key={item.key} className={`bg-slate-900/50 border border-slate-800 rounded-2xl p-5 space-y-4 ${category ? "md:col-span-2" : ""}`}>
+                {visible.map(({ category: item, stats: itemStats }) => {
+                    const isRetired = !isActiveCategory(item);
+                    return (
+                    <section key={item.key} className={`bg-slate-900/50 border rounded-2xl p-5 space-y-4 ${category ? "md:col-span-2" : ""} ${isRetired ? "border-dashed border-slate-700 opacity-70" : "border-slate-800"}`}>
                         <div className="flex items-baseline justify-between gap-2">
                             <button type="button" onClick={() => setSelected(category ? "all" : item.key)} className="font-semibold text-white hover:text-teal-300 text-left">{item.name}</button>
                             <span className="text-xs text-slate-500">{item.type === "boolean" ? "done / not done" : `amount${item.unit ? ` · ${item.unit}` : ""}`}</span>
                         </div>
+                        {isRetired && (
+                            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                                <Archive size={12} /> Retired {item.retiredOn}{item.replacedBy ? ` · replaced by ${nameOf(item.replacedBy)}` : ""}. Days outside its lifetime are shaded and don&apos;t count.
+                            </p>
+                        )}
+                        {itemStats.days === 0 ? <p className="text-sm text-slate-600">Not tracked during this period.</p> : <>
                         <div className="flex flex-wrap gap-6">
                             <Stat label={`of ${itemStats.days} days`} value={`${itemStats.activeDays}`} />
                             <Stat label="rate" value={`${Math.round((itemStats.activeDays / itemStats.days) * 100)}%`} />
-                            <Stat label="current streak" value={`${itemStats.currentStreak}d`} />
+                            {!isRetired && <Stat label="current streak" value={`${itemStats.currentStreak}d`} />}
                             <Stat label="longest streak" value={`${itemStats.longestStreak}d`} />
                             {item.type === "amount" && <>
                                 <Stat label="total" value={itemStats.total.toLocaleString()} />
@@ -192,6 +237,7 @@ export default function AnalyticsView({ categories, entries, todos }: { categori
                             </>}
                         </div>
                         {item.type === "amount" ? <BarChart series={itemStats.series} goal={item.goal} unit={item.unit} /> : <DayStrip series={itemStats.series} />}
+                        </>}
                         {category && (
                             <div className="space-y-2">
                                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5"><Target size={12} /> Days logged</h3>
@@ -208,7 +254,8 @@ export default function AnalyticsView({ categories, entries, todos }: { categori
                             </div>
                         )}
                     </section>
-                ))}
+                    );
+                })}
 
                 {!category && (
                     <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 space-y-4">

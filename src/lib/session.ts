@@ -1,8 +1,11 @@
 // Signed session cookie using Web Crypto so it works in both Edge middleware and Node API routes.
+import runtimeConfig from './runtimeConfig';
 
 export const SESSION_COOKIE = 'session';
-// Browsers cap cookie lifetime at 400 days.
-export const SESSION_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
+// Browsers cap cookie lifetime at 400 days, so longer values are clamped.
+const MAX_COOKIE_DAYS = 400;
+const sessionDays = Math.min(Math.max(Number(runtimeConfig.auth?.sessionMaxAgeDays) || MAX_COOKIE_DAYS, 1), MAX_COOKIE_DAYS);
+export const SESSION_MAX_AGE_SECONDS = Math.round(sessionDays * 24 * 60 * 60);
 
 const encoder = new TextEncoder();
 

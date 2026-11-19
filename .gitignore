@@ -41,3 +41,6 @@ yarn-error.log*
 
 # local tracker data (personal journal)
 config/localTrackerData.json
+
+# local ops audit log (contains IPs)
+config/localOpsData.json

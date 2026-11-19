@@ -44,6 +44,33 @@
                 ]
             },
             {
+                "name": "ops_keepalive_runs",
+                "estimatedCount": 412,
+                "sampled": 25,
+                "indexes": ["_id_", "at_1"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 25 },
+                    { "name": "at", "types": ["date"], "seenIn": 25 },
+                    { "name": "results", "types": ["array"], "seenIn": 25 },
+                    { "name": "source", "types": ["string"], "seenIn": 25 }
+                ]
+            },
+            {
+                "name": "ops_login_attempts",
+                "estimatedCount": 57,
+                "sampled": 25,
+                "indexes": ["_id_", "at_1"],
+                "fields": [
+                    { "name": "_id", "types": ["objectId"], "seenIn": 25 },
+                    { "name": "at", "types": ["date"], "seenIn": 25 },
+                    { "name": "ip", "types": ["string"], "seenIn": 25 },
+                    { "name": "login", "types": ["string"], "seenIn": 25 },
+                    { "name": "outcome", "types": ["string"], "seenIn": 25 },
+                    { "name": "success", "types": ["bool"], "seenIn": 25 },
+                    { "name": "userAgent", "types": ["string"], "seenIn": 25 }
+                ]
+            },
+            {
                 "name": "tracker_categories",
                 "estimatedCount": 5,
                 "sampled": 5,
@@ -54,6 +81,9 @@
                     { "name": "goal", "types": ["int"], "seenIn": 2 },
                     { "name": "key", "types": ["string"], "seenIn": 5 },
                     { "name": "name", "types": ["string"], "seenIn": 5 },
+                    { "name": "replacedBy", "types": ["string"], "seenIn": 1 },
+                    { "name": "retiredOn", "types": ["string"], "seenIn": 1 },
+                    { "name": "startedOn", "types": ["string"], "seenIn": 1 },
                     { "name": "type", "types": ["string"], "seenIn": 5 },
                     { "name": "unit", "types": ["string"], "seenIn": 2 }
                 ]

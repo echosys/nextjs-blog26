@@ -53,7 +53,7 @@ export default function LoginForm({ next }: { next: string | null }) {
 
     useEffect(() => {
         // Fire-and-forget DB read so visiting the login page keeps free-tier databases awake.
-        fetch('/api/keepalive', { cache: 'no-store' }).catch(() => undefined);
+        fetch('/api/keepalive?source=login-page', { cache: 'no-store' }).catch(() => undefined);
 
         // Check MongoDB
         setMongo({ status: 'checking', host: '' });

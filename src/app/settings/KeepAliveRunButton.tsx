@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 
 type Result = { backend: string; configured: boolean; ok: boolean; ms?: number; message?: string };
 
 export default function KeepAliveRunButton() {
+    const router = useRouter();
     const [running, setRunning] = useState(false);
     const [response, setResponse] = useState<{ enabled: boolean; at?: string; results: Result[] } | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -14,8 +16,9 @@ export default function KeepAliveRunButton() {
         setRunning(true);
         setError(null);
         try {
-            const res = await fetch("/api/keepalive", { cache: "no-store", signal: AbortSignal.timeout(20000) });
+            const res = await fetch("/api/keepalive?source=settings", { cache: "no-store", signal: AbortSignal.timeout(20000) });
             setResponse(await res.json());
+            router.refresh();
         } catch (err: any) {
             setError(err?.name === "TimeoutError" ? "No response after 20s" : "Request failed");
         } finally {

@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronLeft, ChevronRight, Circle, ListChecks, Plus, Save, Settings2, X } from "lucide-react";
+import { Archive, CheckCircle2, ChevronLeft, ChevronRight, Circle, ListChecks, Pencil, Plus, RotateCcw, Save, Settings2, X } from "lucide-react";
 import {
     addDays,
+    categoryEditMode,
     formatDay,
     formatMetric,
     formatMonth,
+    isActiveCategory,
     isMetricDone,
     monthKeyOf,
     toDateKey,
@@ -28,9 +30,11 @@ function toForm(entry: TrackerEntry | undefined, categories: TrackerCategory[]):
     return form;
 }
 
-export default function JournalView({ categories, entries, todos }: { categories: TrackerCategory[]; entries: TrackerEntry[]; todos: TrackerTodo[] }) {
+export default function JournalView({ categories: allCategories, entries, todos }: { categories: TrackerCategory[]; entries: TrackerEntry[]; todos: TrackerTodo[] }) {
     const mounted = useMounted();
     const router = useRouter();
+    const categories = useMemo(() => allCategories.filter(isActiveCategory), [allCategories]);
+    const retired = useMemo(() => allCategories.filter((category) => !isActiveCategory(category)), [allCategories]);
     const [date, setDate] = useState("");
     const [notes, setNotes] = useState("");
     const [metrics, setMetrics] = useState<FormMetrics>({});
@@ -145,7 +149,14 @@ export default function JournalView({ categories, entries, todos }: { categories
                             </span>
                         </label>
                     ))}
-                    {showCategories && <CategoryManager categories={categories} onChanged={() => router.refresh()} />}
+                    {showCategories && <CategoryManager categories={categories} retired={retired} onChanged={() => router.refresh()} />}
+                    {retired.filter((category) => existing?.metrics[category.key] !== undefined).map((category) => (
+                        <div key={category.key} title="Retired category — kept as history, not editable"
+                            className="flex items-center justify-between px-3 py-2 rounded-lg border border-dashed border-slate-800 text-sm text-slate-500">
+                            <span className="flex items-center gap-1.5"><Archive size={12} /> {category.name} <span className="text-[10px] uppercase tracking-wider">retired</span></span>
+                            <span>{formatMetric(category, existing?.metrics[category.key])}</span>
+                        </div>
+                    ))}
                 </div>
 
                 <div className="space-y-2">
@@ -196,6 +207,11 @@ export default function JournalView({ categories, entries, todos }: { categories
                                                     {category.type === "boolean" ? `✓ ${category.name}` : `${category.name} ${formatMetric(category, entry?.metrics[category.key])}`}
                                                 </span>
                                             ))}
+                                            {retired.filter((category) => isMetricDone(entry?.metrics[category.key])).map((category) => (
+                                                <span key={category.key} title="Retired category" className="text-[11px] px-2 py-0.5 rounded-full border border-dashed border-slate-700 text-slate-500">
+                                                    {category.type === "boolean" ? `✓ ${category.name}` : `${category.name} ${formatMetric(category, entry?.metrics[category.key])}`}
+                                                </span>
+                                            ))}
                                             {completed.length > 0 && (
                                                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 flex items-center gap-1"><ListChecks size={11} /> {completed.length} to-do{completed.length === 1 ? "" : "s"}</span>
                                             )}
@@ -212,68 +228,116 @@ export default function JournalView({ categories, entries, todos }: { categories
     );
 }
 
-function CategoryManager({ categories, onChanged }: { categories: TrackerCategory[]; onChanged: () => void }) {
-    const [name, setName] = useState("");
-    const [type, setType] = useState<"boolean" | "amount">("boolean");
-    const [unit, setUnit] = useState("");
-    const [goal, setGoal] = useState("");
+type CategoryForm = { name: string; type: "boolean" | "amount"; unit: string; goal: string };
+const EMPTY_FORM: CategoryForm = { name: "", type: "boolean", unit: "", goal: "" };
+
+function CategoryManager({ categories, retired, onChanged }: { categories: TrackerCategory[]; retired: TrackerCategory[]; onChanged: () => void }) {
+    const [form, setForm] = useState<CategoryForm>(EMPTY_FORM);
+    const [editingKey, setEditingKey] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
-    const add = async (event: React.FormEvent) => {
-        event.preventDefault();
+    const editing = categories.find((category) => category.key === editingKey);
+    const mode = editing ? categoryEditMode(editing, { name: form.name.trim(), type: form.type, unit: form.type === "amount" ? form.unit.trim() || undefined : undefined }) : null;
+    const nameOf = (key?: string) => [...categories, ...retired].find((category) => category.key === key)?.name;
+
+    const run = async (action: () => Promise<unknown>) => {
         setBusy(true);
         setError(null);
         try {
-            await trackerRequest("categories", "POST", { name, type, unit, goal });
-            setName(""); setUnit(""); setGoal("");
+            await action();
             onChanged();
+            return true;
         } catch (err: any) {
             setError(err.message);
+            return false;
         } finally {
             setBusy(false);
         }
     };
 
-    const remove = async (category: TrackerCategory) => {
-        if (!window.confirm(`Remove "${category.name}"? Values already saved stay in old entries but are hidden.`)) return;
-        try {
-            await trackerRequest(`categories?key=${encodeURIComponent(category.key)}`, "DELETE");
-            onChanged();
-        } catch (err: any) {
-            setError(err.message);
-        }
+    const submit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        const body = { ...form, today: toDateKey(new Date()) };
+        const ok = await run(() => editing
+            ? trackerRequest(`categories?key=${encodeURIComponent(editing.key)}`, "PATCH", body)
+            : trackerRequest("categories", "POST", body));
+        if (ok) { setForm(EMPTY_FORM); setEditingKey(null); }
     };
+
+    const startEdit = (category: TrackerCategory) => {
+        setEditingKey(category.key);
+        setForm({ name: category.name, type: category.type, unit: category.unit ?? "", goal: category.goal ? String(category.goal) : "" });
+    };
+
+    const retire = (category: TrackerCategory) => {
+        if (!window.confirm(`Retire "${category.name}"? Its past values are kept and stay available in Analytics, but you can't log it anymore.`)) return;
+        run(() => trackerRequest(`categories?key=${encodeURIComponent(category.key)}&today=${toDateKey(new Date())}`, "DELETE"));
+    };
+
+    const inputClass = "bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-white focus:outline-none focus:border-teal-500";
 
     return (
         <div className="mt-3 p-3 rounded-lg border border-dashed border-slate-700 space-y-3">
             <ul className="flex flex-wrap gap-1.5">
                 {categories.map((category) => (
-                    <li key={category.key} className="text-xs flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                    <li key={category.key} className={`text-xs flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full ${category.key === editingKey ? "bg-teal-500/20 text-teal-200" : "bg-slate-800 text-slate-300"}`}>
                         {category.name}<span className="text-slate-500">· {category.type === "boolean" ? "yes/no" : category.unit || "amount"}</span>
-                        <button type="button" onClick={() => remove(category)} className="p-0.5 text-slate-500 hover:text-rose-400" aria-label={`Remove ${category.name}`}><X size={12} /></button>
+                        <button type="button" onClick={() => startEdit(category)} className="p-0.5 text-slate-500 hover:text-teal-300" aria-label={`Edit ${category.name}`}><Pencil size={11} /></button>
+                        <button type="button" onClick={() => retire(category)} className="p-0.5 text-slate-500 hover:text-rose-400" aria-label={`Retire ${category.name}`}><X size={12} /></button>
                     </li>
                 ))}
             </ul>
-            <form onSubmit={add} className="grid grid-cols-2 gap-2 text-sm">
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New category (e.g. Water)" required maxLength={40}
-                    className="col-span-2 bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-white focus:outline-none focus:border-teal-500" />
-                <select value={type} onChange={(e) => setType(e.target.value as "boolean" | "amount")} aria-label="Category type"
-                    className="bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-slate-200 focus:outline-none focus:border-teal-500">
+
+            <form onSubmit={submit} className="grid grid-cols-2 gap-2 text-sm">
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="New category (e.g. Water)" required maxLength={40}
+                    aria-label="Category name" className={`col-span-2 ${inputClass}`} />
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as CategoryForm["type"] })} aria-label="Category type"
+                    className={`${inputClass} text-slate-200`}>
                     <option value="boolean">Done / not done</option>
                     <option value="amount">Amount</option>
                 </select>
-                {type === "amount" ? (
+                {form.type === "amount" ? (
                     <div className="flex gap-2">
-                        <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="unit" maxLength={20} className="w-1/2 bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-white focus:outline-none focus:border-teal-500" />
-                        <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="goal" type="number" min={0} className="w-1/2 bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-white focus:outline-none focus:border-teal-500" />
+                        <input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="unit" maxLength={20} aria-label="Unit" className={`w-1/2 ${inputClass}`} />
+                        <input value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} placeholder="goal" type="number" min={0} aria-label="Goal" className={`w-1/2 ${inputClass}`} />
                     </div>
                 ) : <span />}
-                <button type="submit" disabled={busy} className="col-span-2 flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-md py-1.5">
-                    <Plus size={14} /> Add category
-                </button>
+                {editing && (
+                    <p className={`col-span-2 text-xs ${mode === "replace" ? "text-amber-300" : "text-slate-400"}`}>
+                        {mode === "replace"
+                            ? `Renaming or changing the type/unit starts a new category from today. "${editing.name}" is retired and keeps its past values.`
+                            : "Only the goal changes; the category and its history stay the same."}
+                    </p>
+                )}
+                <div className="col-span-2 flex gap-2">
+                    <button type="submit" disabled={busy} className="flex-1 flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-md py-1.5">
+                        {editing ? <><Save size={14} /> {mode === "replace" ? "Save as new category" : "Save goal"}</> : <><Plus size={14} /> Add category</>}
+                    </button>
+                    {editing && <button type="button" onClick={() => { setEditingKey(null); setForm(EMPTY_FORM); }} className="px-3 rounded-md text-slate-400 hover:text-white hover:bg-slate-800">Cancel</button>}
+                </div>
                 {error && <p className="col-span-2 text-xs text-rose-400">{error}</p>}
             </form>
+
+            {retired.length > 0 && (
+                <details className="text-xs">
+                    <summary className="cursor-pointer text-slate-500 hover:text-slate-300">Retired ({retired.length}) — data kept, view in Analytics</summary>
+                    <ul className="mt-2 space-y-1">
+                        {retired.map((category) => (
+                            <li key={category.key} className="flex items-center justify-between gap-2 text-slate-500">
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                    <Archive size={11} className="shrink-0" />
+                                    <span className="truncate">{category.name} · {category.type === "boolean" ? "yes/no" : category.unit || "amount"} · until {category.retiredOn}{category.replacedBy ? ` → ${nameOf(category.replacedBy) ?? category.replacedBy}` : ""}</span>
+                                </span>
+                                <button type="button" onClick={() => run(() => trackerRequest(`categories?key=${encodeURIComponent(category.key)}`, "PATCH", { restore: true }))}
+                                    disabled={busy} className="shrink-0 flex items-center gap-1 text-slate-500 hover:text-teal-300" title="Make it loggable again">
+                                    <RotateCcw size={11} /> Restore
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </details>
+            )}
         </div>
     );
 }

@@ -3,11 +3,15 @@ import {
     addDays,
     bucketTodos,
     buildHeatmap,
+    categoryEditMode,
     categoryStats,
+    categoryWindow,
     isDateKey,
+    isOutsideWindow,
     sanitizeCategoryInput,
     sanitizeEntryInput,
     TrackerInputError,
+    uniqueKey,
     type TrackerCategory,
     type TrackerEntry,
     type TrackerTodo,
@@ -110,8 +114,44 @@ describe('input validation', () => {
     });
 
     it('slugifies category names and only keeps unit/goal for amounts', () => {
-        expect(sanitizeCategoryInput({ name: 'Water Intake', type: 'amount', unit: 'ml', goal: '2000' })).toEqual({ key: 'water-intake', name: 'Water Intake', type: 'amount', unit: 'ml', goal: 2000 });
-        expect(sanitizeCategoryInput({ name: 'Stretch', type: 'boolean', unit: 'x' })).toEqual({ key: 'stretch', name: 'Stretch', type: 'boolean' });
+        expect(sanitizeCategoryInput({ name: 'Water Intake', type: 'amount', unit: 'ml', goal: '2000' })).toEqual({ name: 'Water Intake', type: 'amount', unit: 'ml', goal: 2000 });
+        expect(sanitizeCategoryInput({ name: 'Stretch', type: 'boolean', unit: 'x' })).toEqual({ name: 'Stretch', type: 'boolean' });
         expect(() => sanitizeCategoryInput({ name: '!!!' })).toThrow(TrackerInputError);
+    });
+});
+
+describe('category lifecycle', () => {
+    it('never reuses a storage key', () => {
+        expect(uniqueKey('workout', ['steps'])).toBe('workout');
+        expect(uniqueKey('workout', ['workout', 'workout-2'])).toBe('workout-3');
+    });
+
+    it('edits goals in place but replaces on rename, retype, or unit change', () => {
+        expect(categoryEditMode(steps, { name: 'Steps', type: 'amount', unit: 'steps' })).toBe('in-place');
+        expect(categoryEditMode(steps, { name: 'Walking', type: 'amount', unit: 'steps' })).toBe('replace');
+        expect(categoryEditMode(steps, { name: 'Steps', type: 'boolean' })).toBe('replace');
+        expect(categoryEditMode(steps, { name: 'Steps', type: 'amount', unit: 'km' })).toBe('replace');
+    });
+
+    it('derives the lifetime window from start/retire days and the first value', () => {
+        const retired: TrackerCategory = { ...workout, startedOn: '2026-11-05', retiredOn: '2026-11-12' };
+        const entries = [entry('2026-11-03', { workout: true }), entry('2026-11-08', { workout: true })];
+        const window = categoryWindow(retired, entries);
+        expect(window).toEqual({ from: '2026-11-03', until: '2026-11-12' });
+        expect(isOutsideWindow('2026-11-02', window)).toBe(true);
+        expect(isOutsideWindow('2026-11-12', window)).toBe(false);
+        expect(isOutsideWindow('2026-11-13', window)).toBe(true);
+        expect(categoryWindow(workout, [])).toEqual({ from: undefined, until: undefined });
+    });
+
+    it('excludes days outside the lifetime from rates and streaks; retired categories have no current streak', () => {
+        const retired: TrackerCategory = { ...workout, retiredOn: '2026-11-12' };
+        const byDate = new Map([entry('2026-11-10', { workout: true }), entry('2026-11-11', { workout: true }), entry('2026-11-12', { workout: true })].map((item) => [item.date, item]));
+        const stats = categoryStats(retired, byDate, '2026-11-01', '2026-11-20', { from: '2026-11-10', until: '2026-11-12' });
+        expect(stats.days).toBe(3);
+        expect(stats.activeDays).toBe(3);
+        expect(stats.longestStreak).toBe(3);
+        expect(stats.currentStreak).toBe(0);
+        expect(stats.series.filter((point) => point.outside)).toHaveLength(17);
     });
 });

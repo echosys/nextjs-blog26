@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { headers } from "next/headers";
-import { Activity, Database, KeyRound, Table2 } from "lucide-react";
+import { Activity, Database, KeyRound, ShieldCheck, Table2 } from "lucide-react";
 import KeepAliveRunButton from "./KeepAliveRunButton";
+import LocalTime from "../components/LocalTime";
+import { listKeepAliveRuns, listLoginAttempts, type KeepAliveRun } from "../../lib/opsLog";
 import vercelConfig from "../../../vercel.json";
 import runtimeConfig, { getRuntimeStorageConfig, isKeepAliveEnabled } from "../../lib/runtimeConfig";
 import { getMockSchema, getMongoSchema, getPostgresSchema, getSchemaOwners } from "../../lib/dbAdmin";
@@ -29,6 +31,110 @@ function SchemaError({ message }: { message: string }) {
 
 function SchemaLoading() {
     return <p className="text-sm text-slate-500 animate-pulse">Reading schema...</p>;
+}
+
+const SOURCE_LABEL: Record<KeepAliveRun["source"], string> = {
+    cron: "daily cron",
+    "login-page": "login page visit",
+    settings: "Settings button",
+    api: "direct API call",
+};
+
+function ProbeBadges({ run }: { run: KeepAliveRun }) {
+    return (
+        <span className="flex flex-wrap gap-1.5">
+            {run.results.map((result) => (
+                <span key={result.backend} title={result.message}
+                    className={`text-[11px] px-2 py-0.5 rounded-full ${!result.configured ? "bg-slate-800 text-slate-500" : result.ok ? "bg-teal-500/10 text-teal-300" : "bg-rose-500/10 text-rose-300"}`}>
+                    {result.backend} {!result.configured ? "not configured" : result.ok ? `ok ${result.ms} ms` : "failed"}
+                </span>
+            ))}
+        </span>
+    );
+}
+
+async function KeepAliveHistory({ host }: { host: string | null }) {
+    let runs: KeepAliveRun[];
+    try {
+        runs = await listKeepAliveRuns(host);
+    } catch (error: any) {
+        return <p className="text-sm text-rose-400">Couldn&apos;t read the keep-alive log: {error?.message}</p>;
+    }
+    if (runs.length === 0) return <p className="text-sm text-slate-500">No keep-alive runs recorded yet.</p>;
+    const [last, ...older] = runs;
+    const lastSuccess = runs.find((run) => run.results.every((result) => !result.configured || result.ok));
+
+    return (
+        <div className="space-y-3 text-sm">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-4 py-3 space-y-1">
+                <p className="text-slate-300">
+                    Last run <span className="text-white font-medium"><LocalTime iso={last.at} withRelative /></span> via <span className="text-white">{SOURCE_LABEL[last.source]}</span>
+                </p>
+                <ProbeBadges run={last} />
+                {lastSuccess && lastSuccess !== last && (
+                    <p className="text-xs text-slate-500">Last fully successful run: <LocalTime iso={lastSuccess.at} withRelative /> via {SOURCE_LABEL[lastSuccess.source]}</p>
+                )}
+            </div>
+            {older.length > 0 && (
+                <details className="text-xs">
+                    <summary className="cursor-pointer text-slate-500 hover:text-slate-300">Previous runs ({older.length})</summary>
+                    <ul className="mt-2 space-y-1.5">
+                        {older.map((run) => (
+                            <li key={run.id} className="flex flex-wrap items-center gap-2 text-slate-400">
+                                <span className="w-32 shrink-0"><LocalTime iso={run.at} /></span>
+                                <span className="w-32 shrink-0 text-slate-500">{SOURCE_LABEL[run.source]}</span>
+                                <ProbeBadges run={run} />
+                            </li>
+                        ))}
+                    </ul>
+                </details>
+            )}
+            <p className="text-xs text-slate-500">Stored in <Mono>{runtimeConfig.ops.keepAliveRunsCollection}</Mono> for {runtimeConfig.ops.retentionDays} days.</p>
+        </div>
+    );
+}
+
+async function LoginActivity({ host }: { host: string | null }) {
+    let attempts;
+    try {
+        attempts = await listLoginAttempts(host);
+    } catch (error: any) {
+        return <p className="text-sm text-rose-400">Couldn&apos;t read login activity: {error?.message}</p>;
+    }
+    if (attempts.length === 0) return <p className="text-sm text-slate-500">No login attempts recorded yet.</p>;
+    const dayAgo = Date.now() - 86_400_000;
+    const failedToday = attempts.filter((attempt) => !attempt.success && Date.parse(attempt.at) >= dayAgo).length;
+
+    return (
+        <div className="space-y-3">
+            <p className="text-sm text-slate-400">
+                Latest {attempts.length} attempts · <span className={failedToday ? "text-amber-300" : "text-slate-400"}>{failedToday} failed in the last 24 h</span>
+            </p>
+            <div className="border border-slate-800 rounded-xl overflow-x-auto">
+                <table className="w-full text-xs">
+                    <thead className="bg-slate-950/50 text-slate-500 text-left">
+                        <tr><th className="px-3 py-2 font-medium">When</th><th className="px-3 py-2 font-medium">Result</th><th className="px-3 py-2 font-medium">User</th><th className="px-3 py-2 font-medium">IP</th><th className="px-3 py-2 font-medium">Browser</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                        {attempts.map((attempt) => (
+                            <tr key={attempt.id}>
+                                <td className="px-3 py-1.5 text-slate-400 whitespace-nowrap"><LocalTime iso={attempt.at} /></td>
+                                <td className="px-3 py-1.5 whitespace-nowrap">
+                                    {attempt.success
+                                        ? <span className="text-teal-400">success</span>
+                                        : <span className="text-rose-400">{attempt.outcome.replace("-", " ")}</span>}
+                                </td>
+                                <td className="px-3 py-1.5 font-mono text-slate-300 truncate max-w-[10rem]" title={attempt.login}>{attempt.login}</td>
+                                <td className="px-3 py-1.5 font-mono text-slate-300 whitespace-nowrap">{attempt.ip}</td>
+                                <td className="px-3 py-1.5 text-slate-500 truncate max-w-[16rem]" title={attempt.userAgent}>{attempt.userAgent || "—"}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <p className="text-xs text-slate-500">Passwords are never stored. Stored in <Mono>{runtimeConfig.ops.loginAttemptsCollection}</Mono> for {runtimeConfig.ops.retentionDays} days; IPs come from the platform&apos;s <Mono>x-forwarded-for</Mono> header.</p>
+        </div>
+    );
 }
 
 function OwnerBadge({ owner }: { owner?: string }) {
@@ -146,16 +252,17 @@ async function PostgresSchemaView({ mock }: { mock: boolean }) {
 }
 
 export default async function SettingsPage() {
-    const storage = getRuntimeStorageConfig((await headers()).get("host"));
+    const host = (await headers()).get("host");
+    const storage = getRuntimeStorageConfig(host);
     const keepAliveEnabled = isKeepAliveEnabled();
     const cronSchedule = vercelConfig.crons?.find((cron) => cron.path === "/api/keepalive")?.schedule;
-    const usesMongo = storage.loginMode === "mongo" || storage.mongoBlogMode === "mongo" || storage.trackerMode === "mongo";
+    const usesMongo = storage.loginMode === "mongo" || storage.mongoBlogMode === "mongo" || storage.trackerMode === "mongo" || storage.opsMode === "mongo";
     const usesPostgres = storage.postgresBlogMode === "postgres";
 
     const envVars = [
         {
             name: "MONGODB_URI",
-            purpose: "MongoDB connection string for login, the Mongo blog, and the Tracker (when their mode is mongo).",
+            purpose: "MongoDB connection string for login, the Mongo blog, the Tracker, and the ops log (when their mode is mongo).",
             required: usesMongo,
         },
         {
@@ -175,7 +282,7 @@ export default async function SettingsPage() {
             <div>
                 <h1 className="text-2xl font-bold text-white">Settings</h1>
                 <p className="text-slate-400 text-sm mt-1">
-                    Runtime profile <Mono>{storage.runtime}</Mono> · login <Mono>{storage.loginMode}</Mono> · Mongo blog <Mono>{storage.mongoBlogMode}</Mono> · PG blog <Mono>{storage.postgresBlogMode}</Mono> · tracker <Mono>{storage.trackerMode}</Mono>
+                    Runtime profile <Mono>{storage.runtime}</Mono> · login <Mono>{storage.loginMode}</Mono> · Mongo blog <Mono>{storage.mongoBlogMode}</Mono> · PG blog <Mono>{storage.postgresBlogMode}</Mono> · tracker <Mono>{storage.trackerMode}</Mono> · ops log <Mono>{storage.opsMode}</Mono>
                 </p>
             </div>
 
@@ -198,6 +305,15 @@ export default async function SettingsPage() {
                     </label>
                 </div>
                 <KeepAliveRunButton />
+                <Suspense fallback={<SchemaLoading />}>
+                    <KeepAliveHistory host={host} />
+                </Suspense>
+            </Section>
+
+            <Section icon={ShieldCheck} title="Login activity">
+                <Suspense fallback={<SchemaLoading />}>
+                    <LoginActivity host={host} />
+                </Suspense>
             </Section>
 
             <Section icon={KeyRound} title="Environment variables">
